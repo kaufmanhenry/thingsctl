@@ -646,7 +646,7 @@ class ThingsCLI {
         when = options.to;
     }
     
-    const url = `things:///update?id=${task.uuid}&when=${when}`;
+    const url = `things:///update?id=${task.uuid}&when=${encodeURIComponent(when).replace(/\+/g, '%20')}`;
     execSync(`open "${url}"`);
     return `Moved "${task.title}" to ${options.to}`;
   }
