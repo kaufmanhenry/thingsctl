@@ -184,6 +184,8 @@ class ThingsCLI {
   //
   // We also include tasks scheduled for today or earlier (startDate < today_end).
   // startDate uses Unix timestamps, but values < 1000000000 are typically NULL/empty.
+  //
+  // Supports filters: --tag, --area, --project
   today(options = {}) {
     const bounds = this.getTodayBounds();
     
@@ -202,11 +204,13 @@ class ThingsCLI {
         startDate ASC
     `);
     
-    const tasks = stmt.all(bounds.end);
+    let tasks = stmt.all(bounds.end);
+    tasks = this.applyFilters(tasks, options);
     return this.outputTasks(tasks, options);
   }
 
   // ANYTIME: Tasks with start=1 (Anytime) that aren't in Today
+  // Supports filters: --tag, --area, --project
   anytime(options = {}) {
     const stmt = this.db.prepare(`
       SELECT * FROM TMTask 
@@ -219,11 +223,13 @@ class ThingsCLI {
       ORDER BY \`index\` ASC
     `);
     
-    const tasks = stmt.all();
+    let tasks = stmt.all();
+    tasks = this.applyFilters(tasks, options);
     return this.outputTasks(tasks, options);
   }
 
   // SOMEDAY: Tasks with start=2 (Someday) that aren't scheduled or in Today
+  // Supports filters: --tag, --area, --project
   someday(options = {}) {
     const stmt = this.db.prepare(`
       SELECT * FROM TMTask 
@@ -236,11 +242,13 @@ class ThingsCLI {
       ORDER BY \`index\` ASC
     `);
     
-    const tasks = stmt.all();
+    let tasks = stmt.all();
+    tasks = this.applyFilters(tasks, options);
     return this.outputTasks(tasks, options);
   }
 
   // INBOX: Tasks with start=0 (Inbox)
+  // Supports filters: --tag
   inbox(options = {}) {
     const stmt = this.db.prepare(`
       SELECT * FROM TMTask 
@@ -251,11 +259,13 @@ class ThingsCLI {
       ORDER BY creationDate DESC
     `);
     
-    const tasks = stmt.all();
+    let tasks = stmt.all();
+    tasks = this.applyFilters(tasks, options);
     return this.outputTasks(tasks, options);
   }
 
   // UPCOMING: Tasks scheduled for future dates
+  // Supports filters: --tag, --area, --project
   upcoming(options = {}) {
     const bounds = this.getTodayBounds();
     
@@ -268,7 +278,8 @@ class ThingsCLI {
       ORDER BY startDate ASC
     `);
     
-    const tasks = stmt.all(bounds.end);
+    let tasks = stmt.all(bounds.end);
+    tasks = this.applyFilters(tasks, options);
     return this.outputTasks(tasks, { ...options, showDate: true });
   }
 
@@ -509,15 +520,23 @@ class ThingsCLI {
   }
 
   // ADD: Add a new task via Things URL scheme
-  // Supports: --notes, --when, --deadline, --tags, --list, --project, --area
+  // Supports: --notes, --when, --deadline, --tags, --list, --project, --area, --checklist
   add(title, options = {}) {
     const params = new URLSearchParams();
     params.set('title', title);
+    params.set('auth-token', 'k6oWCQGAHQIBAAAAAAAAAA');
     
     if (options.notes) params.set('notes', options.notes);
     if (options.when) params.set('when', options.when);
     if (options.deadline) params.set('deadline', options.deadline);
     if (options.tags) params.set('tags', options.tags);
+    
+    // Checklist items (comma-separated or newline-separated)
+    if (options.checklist) {
+      // Things URL scheme uses newline-separated items
+      const items = options.checklist.split(',').map(s => s.trim()).join('\n');
+      params.set('checklist-items', items);
+    }
     
     // Handle list assignment (inbox, anytime, someday)
     if (options.list) params.set('list', options.list);
@@ -554,33 +573,48 @@ class ThingsCLI {
     }
     
     let result = `${colors.green}✓${colors.reset} Added: ${title}`;
+    if (options.checklist) {
+      const count = options.checklist.split(',').length;
+      result += ` (${count} checklist items)`;
+    }
     if (options.project) result += ` → ${options.project}`;
     if (options.area) result += ` (${options.area})`;
     if (options.when) result += ` [${options.when}]`;
     return result;
   }
 
-  // COMPLETE: Mark task as complete via URL scheme
-  complete(id) {
-    // Get full UUID
+  // COMPLETE: Mark task(s) as complete via URL scheme
+  // Supports bulk completion: complete(["id1", "id2", "id3"])
+  complete(ids) {
+    // Handle single ID or array of IDs
+    const idList = Array.isArray(ids) ? ids : [ids];
+    const results = [];
     const stmt = this.db.prepare(`SELECT uuid, title, status FROM TMTask WHERE uuid LIKE ?`);
-    const task = stmt.get(`${id}%`);
     
-    if (!task) {
-      throw new Error(`Task not found: ${id}\nTip: Use 'thingsctl search' or 'thingsctl today' to find task IDs`);
+    for (const id of idList) {
+      const task = stmt.get(`${id}%`);
+      
+      if (!task) {
+        results.push(`${colors.red}✗${colors.reset} Not found: ${id}`);
+        continue;
+      }
+      
+      if (task.status === STATUS.COMPLETED) {
+        results.push(`${colors.dim}Already completed: ${task.title}${colors.reset}`);
+        continue;
+      }
+      
+      const url = `things:///update?id=${task.uuid}&completed=true&auth-token=k6oWCQGAHQIBAAAAAAAAAA`;
+      try {
+        execSync(`open "${url}"`);
+        results.push(`${colors.green}✓${colors.reset} Completed: ${task.title}`);
+      } catch (e) {
+        results.push(`${colors.red}✗${colors.reset} Failed: ${task.title}`);
+      }
     }
     
-    if (task.status === STATUS.COMPLETED) {
-      return `${colors.dim}Already completed: ${task.title}${colors.reset}`;
-    }
-    
-    const url = `things:///update?id=${task.uuid}&completed=true`;
-    try {
-      execSync(`open "${url}"`);
-    } catch (e) {
-      throw new Error('Failed to open Things. Is Things 3 running?');
-    }
-    return `${colors.green}✓${colors.reset} Completed: ${task.title}`;
+    // Return single string for single ID, array for bulk
+    return idList.length === 1 ? results[0] : results;
   }
 
   // MOVE: Move task to a different list via URL scheme
@@ -828,7 +862,312 @@ class ThingsCLI {
       return tasks.map(t => this.formatTask(t, { json: true }));
     }
     
+    // --ids flag: output only UUIDs (for scripting)
+    if (options.ids) {
+      return tasks.map(t => t.uuid);
+    }
+    
+    // --compact flag: single-line format
+    if (options.compact) {
+      return tasks.map(t => {
+        const check = t.status === STATUS.COMPLETED ? '✓' : '☐';
+        return `${check} ${t.uuid.slice(0, 4)} ${t.title}`;
+      });
+    }
+    
     return tasks.map(t => this.formatTask(t, options));
+  }
+
+  // Apply filters to a task list
+  applyFilters(tasks, options = {}) {
+    let filtered = tasks;
+    
+    // Filter by tag
+    if (options.tag) {
+      const tagName = options.tag.toLowerCase();
+      filtered = filtered.filter(t => {
+        const tags = this.getTaskTags(t.uuid);
+        return tags.some(tag => tag.toLowerCase().includes(tagName));
+      });
+    }
+    
+    // Filter by area
+    if (options.area) {
+      const areaName = options.area.toLowerCase();
+      filtered = filtered.filter(t => {
+        const area = this.getAreaName(t.area);
+        return area && area.toLowerCase().includes(areaName);
+      });
+    }
+    
+    // Filter by project
+    if (options.project) {
+      const projectName = options.project.toLowerCase();
+      filtered = filtered.filter(t => {
+        const project = this.getProjectName(t.project);
+        return project && project.toLowerCase().includes(projectName);
+      });
+    }
+    
+    return filtered;
+  }
+
+  // UPDATE: Update task properties via URL scheme
+  update(id, options = {}) {
+    const stmt = this.db.prepare(`SELECT uuid, title, notes FROM TMTask WHERE uuid LIKE ?`);
+    const task = stmt.get(`${id}%`);
+    
+    if (!task) {
+      throw new Error(`Task not found: ${id}`);
+    }
+    
+    const params = new URLSearchParams();
+    params.set('id', task.uuid);
+    params.set('auth-token', 'k6oWCQGAHQIBAAAAAAAAAA');
+    
+    // Title update
+    if (options.title) {
+      params.set('title', options.title);
+    }
+    
+    // Notes update (replaces existing notes)
+    if (options.notes) {
+      params.set('notes', options.notes);
+    }
+    
+    // Append to notes
+    if (options['append-notes']) {
+      const newNotes = task.notes 
+        ? `${task.notes}\n\n${options['append-notes']}`
+        : options['append-notes'];
+      params.set('notes', newNotes);
+    }
+    
+    // Prepend to notes
+    if (options['prepend-notes']) {
+      const newNotes = task.notes 
+        ? `${options['prepend-notes']}\n\n${task.notes}`
+        : options['prepend-notes'];
+      params.set('notes', newNotes);
+    }
+    
+    // When (schedule date)
+    if (options.when) {
+      params.set('when', options.when);
+    }
+    
+    // Deadline
+    if (options.deadline) {
+      params.set('deadline', options.deadline);
+    }
+    
+    // Tags (add)
+    if (options['add-tags']) {
+      params.set('add-tags', options['add-tags']);
+    }
+    
+    // Completed
+    if (options.completed !== undefined) {
+      params.set('completed', options.completed ? 'true' : 'false');
+    }
+    
+    // Canceled
+    if (options.canceled !== undefined) {
+      params.set('canceled', options.canceled ? 'true' : 'false');
+    }
+    
+    const url = `things:///update?${params.toString()}`;
+    
+    try {
+      execSync(`open "${url}"`);
+    } catch (e) {
+      throw new Error('Failed to open Things. Is Things 3 running?');
+    }
+    
+    const changes = [];
+    if (options.title) changes.push(`title → "${options.title}"`);
+    if (options.notes) changes.push('notes updated');
+    if (options['append-notes']) changes.push('notes appended');
+    if (options['prepend-notes']) changes.push('notes prepended');
+    if (options.when) changes.push(`when → ${options.when}`);
+    if (options.deadline) changes.push(`deadline → ${options.deadline}`);
+    if (options['add-tags']) changes.push(`tags += ${options['add-tags']}`);
+    
+    return `${colors.green}✓${colors.reset} Updated "${task.title}": ${changes.join(', ')}`;
+  }
+
+  // EXPORT: Export tasks in various formats
+  export(source, options = {}) {
+    let tasks = [];
+    let title = '';
+    
+    // Get tasks based on source
+    switch (source) {
+      case 'today':
+        const bounds = this.getTodayBounds();
+        const todayStmt = this.db.prepare(`
+          SELECT * FROM TMTask 
+          WHERE status = 0 AND trashed = 0 AND type = 0
+            AND (todayIndex > 0 OR (startDate >= 1000000000 AND startDate < ?))
+          ORDER BY todayIndex DESC, startDate ASC
+        `);
+        tasks = todayStmt.all(bounds.end);
+        title = 'Today';
+        break;
+        
+      case 'anytime':
+        const anytimeStmt = this.db.prepare(`
+          SELECT * FROM TMTask 
+          WHERE status = 0 AND trashed = 0 AND type = 0
+            AND start = 1 AND todayIndex <= 0 AND project IS NULL
+          ORDER BY \`index\` ASC
+        `);
+        tasks = anytimeStmt.all();
+        title = 'Anytime';
+        break;
+        
+      case 'someday':
+        const somedayStmt = this.db.prepare(`
+          SELECT * FROM TMTask 
+          WHERE status = 0 AND trashed = 0 AND type = 0
+            AND start = 2 AND todayIndex <= 0 
+            AND (startDate IS NULL OR startDate < 1000000000)
+          ORDER BY \`index\` ASC
+        `);
+        tasks = somedayStmt.all();
+        title = 'Someday';
+        break;
+        
+      case 'inbox':
+        const inboxStmt = this.db.prepare(`
+          SELECT * FROM TMTask 
+          WHERE status = 0 AND trashed = 0 AND type = 0 AND start = 0
+          ORDER BY creationDate DESC
+        `);
+        tasks = inboxStmt.all();
+        title = 'Inbox';
+        break;
+        
+      case 'project':
+        if (!options.name) {
+          throw new Error('Project name required for export project');
+        }
+        const projectStmt = this.db.prepare(`
+          SELECT * FROM TMTask 
+          WHERE type = 1 AND status = 0 AND trashed = 0
+            AND (uuid LIKE ? OR title LIKE ?)
+          LIMIT 1
+        `);
+        const project = projectStmt.get(`${options.name}%`, `%${options.name}%`);
+        if (!project) {
+          throw new Error(`Project not found: ${options.name}`);
+        }
+        const projectTasksStmt = this.db.prepare(`
+          SELECT * FROM TMTask 
+          WHERE project = ? AND type = 0 AND status = 0 AND trashed = 0
+          ORDER BY \`index\` ASC
+        `);
+        tasks = projectTasksStmt.all(project.uuid);
+        title = project.title;
+        break;
+        
+      case 'area':
+        if (!options.name) {
+          throw new Error('Area name required for export area');
+        }
+        const area = this.findAreaByName(options.name);
+        if (!area) {
+          throw new Error(`Area not found: ${options.name}`);
+        }
+        const areaTasksStmt = this.db.prepare(`
+          SELECT * FROM TMTask 
+          WHERE area = ? AND type = 0 AND status = 0 AND trashed = 0
+          ORDER BY \`index\` ASC
+        `);
+        tasks = areaTasksStmt.all(area.uuid);
+        title = area.title;
+        break;
+        
+      default:
+        throw new Error(`Unknown export source: ${source}. Use: today, anytime, someday, inbox, project, area`);
+    }
+    
+    const format = options.format || 'md';
+    
+    if (format === 'md' || format === 'markdown') {
+      return this.exportMarkdown(tasks, title);
+    } else if (format === 'csv') {
+      return this.exportCSV(tasks, title);
+    } else if (format === 'json') {
+      return JSON.stringify(tasks.map(t => this.formatTask(t, { json: true })), null, 2);
+    } else {
+      throw new Error(`Unknown format: ${format}. Use: md, csv, json`);
+    }
+  }
+
+  exportMarkdown(tasks, title) {
+    const lines = [];
+    lines.push(`# ${title}`);
+    lines.push('');
+    lines.push(`*Exported: ${new Date().toLocaleDateString()}*`);
+    lines.push('');
+    
+    for (const task of tasks) {
+      const check = task.status === STATUS.COMPLETED ? '[x]' : '[ ]';
+      let line = `- ${check} ${task.title}`;
+      
+      const tags = this.getTaskTags(task.uuid);
+      if (tags.length > 0) {
+        line += ` #${tags.join(' #')}`;
+      }
+      
+      const deadline = this.formatDate(task.deadline);
+      if (deadline) {
+        line += ` 📅 ${deadline}`;
+      }
+      
+      lines.push(line);
+      
+      // Add notes as indented text
+      if (task.notes) {
+        const noteLines = task.notes.split('\n');
+        for (const noteLine of noteLines) {
+          lines.push(`    ${noteLine}`);
+        }
+      }
+      
+      // Add checklist items
+      const checklistStmt = this.db.prepare(`
+        SELECT * FROM TMChecklistItem WHERE task = ? ORDER BY \`index\` ASC
+      `);
+      const checklist = checklistStmt.all(task.uuid);
+      for (const item of checklist) {
+        const itemCheck = item.status === 3 ? '[x]' : '[ ]';
+        lines.push(`    - ${itemCheck} ${item.title}`);
+      }
+    }
+    
+    return lines.join('\n');
+  }
+
+  exportCSV(tasks, title) {
+    const lines = [];
+    lines.push('uuid,title,status,tags,project,area,deadline,notes');
+    
+    for (const task of tasks) {
+      const status = task.status === STATUS.COMPLETED ? 'completed' : 'open';
+      const tags = this.getTaskTags(task.uuid).join(';');
+      const project = this.getProjectName(task.project) || '';
+      const area = this.getAreaName(task.area) || '';
+      const deadline = task.deadline > 1000000000 
+        ? new Date(task.deadline * 1000).toISOString().split('T')[0] 
+        : '';
+      const notes = (task.notes || '').replace(/"/g, '""').replace(/\n/g, ' ');
+      
+      lines.push(`"${task.uuid}","${task.title}","${status}","${tags}","${project}","${area}","${deadline}","${notes}"`);
+    }
+    
+    return lines.join('\n');
   }
 }
 
@@ -882,6 +1221,7 @@ ${colors.bold}Options:${colors.reset}
                      - YYYY-MM-DD (e.g., 2024-03-15)
   --deadline <date>  Set deadline (YYYY-MM-DD)
   --tags <tags>      Add tags (comma-separated)
+  --checklist <items> Checklist items (comma-separated)
   --list <list>      Target list (inbox, anytime, someday)
   --project <name>   Add to project (partial name match)
   --area <name>      Add to area (partial name match)
@@ -890,6 +1230,7 @@ ${colors.bold}Options:${colors.reset}
 ${colors.bold}Examples:${colors.reset}
   thingsctl add "Buy groceries"
   thingsctl add "Call mom" --when today --tags Phone
+  thingsctl add "Trip prep" --checklist "Passport,Tickets,Charger"
   thingsctl add "Review quarterly goals" --when "next week" --deadline 2024-03-31
   thingsctl add "Fix login bug" --project "Website Redesign"
   thingsctl add "Tax planning" --area Finance --when someday
@@ -899,20 +1240,80 @@ ${colors.bold}Notes:${colors.reset}
   - Tags must already exist in Things (URL scheme limitation)
   - Project/area names are matched partially (case-insensitive)
 `,
-    complete: `
-${colors.bold}thingsctl complete${colors.reset} - Mark a task as complete
+    update: `
+${colors.bold}thingsctl update${colors.reset} - Update a task
 
 ${colors.bold}Usage:${colors.reset}
-  thingsctl complete <id>
+  thingsctl update <id> [options]
 
 ${colors.bold}Arguments:${colors.reset}
   <id>    Task UUID (partial match supported)
 
-${colors.bold}Examples:${colors.reset}
-  thingsctl complete 7Ae3
-  thingsctl complete 17jJuoooc
+${colors.bold}Options:${colors.reset}
+  --title <text>         Change the title
+  --notes <text>         Replace notes entirely
+  --append-notes <text>  Append text to existing notes
+  --prepend-notes <text> Prepend text to existing notes
+  --when <date>          Change schedule date (today, tomorrow, YYYY-MM-DD)
+  --deadline <date>      Change deadline (YYYY-MM-DD)
+  --add-tags <tags>      Add tags (comma-separated)
 
-${colors.bold}Tip:${colors.reset} Use 'thingsctl today' or 'thingsctl search' to find task IDs.
+${colors.bold}Examples:${colors.reset}
+  thingsctl update 7Ae3 --title "New task title"
+  thingsctl update 7Ae3 --notes "Completely new notes"
+  thingsctl update 7Ae3 --append-notes "Added this context"
+  thingsctl update 7Ae3 --when tomorrow
+  thingsctl update 7Ae3 --deadline 2026-03-15
+  thingsctl update 7Ae3 --add-tags "Important,Urgent"
+  thingsctl update 7Ae3 --when today --deadline 2026-03-20
+
+${colors.bold}Notes:${colors.reset}
+  - Use 'thingsctl show <id>' to see current values before updating
+  - Tags must already exist in Things (URL scheme limitation)
+`,
+    complete: `
+${colors.bold}thingsctl complete${colors.reset} - Mark task(s) as complete
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl complete <id> [id2] [id3] ...
+
+${colors.bold}Arguments:${colors.reset}
+  <id>    Task UUID(s) (partial match supported)
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl complete 7Ae3              # Single task
+  thingsctl complete 17jJ ANsB 9pUS    # Bulk complete multiple tasks
+
+${colors.bold}Tip:${colors.reset} Use 'thingsctl today --ids' to get UUIDs for scripting.
+`,
+    export: `
+${colors.bold}thingsctl export${colors.reset} - Export tasks to file
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl export <source> [name] [options]
+
+${colors.bold}Sources:${colors.reset}
+  today              Export Today's tasks
+  anytime            Export Anytime tasks
+  someday            Export Someday tasks
+  inbox              Export Inbox tasks
+  project <name>     Export tasks from a project
+  area <name>        Export tasks from an area
+
+${colors.bold}Options:${colors.reset}
+  --format <fmt>     Output format: md, csv, json (default: md)
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl export today                    # Markdown by default
+  thingsctl export today --format md        # Explicit markdown
+  thingsctl export project "CoStudy" --format csv
+  thingsctl export area Finance --format json
+  thingsctl export today --format md > today.md
+
+${colors.bold}Output:${colors.reset}
+  md   - Markdown checklist format with notes
+  csv  - Spreadsheet-compatible with headers
+  json - Full task data as JSON array
 `,
     move: `
 ${colors.bold}thingsctl move${colors.reset} - Move a task to a different list
@@ -1021,7 +1422,7 @@ ${colors.bold}thingsctl - Things 3 CLI${colors.reset}
 ${colors.bold}Usage:${colors.reset}
   thingsctl <command> [args] [options]
 
-${colors.bold}Commands:${colors.reset}
+${colors.bold}List Commands:${colors.reset}
   ${colors.cyan}today${colors.reset}              Show Today's tasks
   ${colors.cyan}anytime${colors.reset}            Show Anytime tasks
   ${colors.cyan}someday${colors.reset}            Show Someday tasks
@@ -1038,25 +1439,45 @@ ${colors.bold}Commands:${colors.reset}
   ${colors.cyan}logbook${colors.reset}            Show completed tasks
   ${colors.cyan}stats${colors.reset}              Show statistics
   
+${colors.bold}Action Commands:${colors.reset}
   ${colors.cyan}add${colors.reset} <title>        Add a new task
-  ${colors.cyan}complete${colors.reset} <id>      Complete a task
+  ${colors.cyan}update${colors.reset} <id>        Update a task
+  ${colors.cyan}complete${colors.reset} <id...>   Complete task(s) (bulk supported)
   ${colors.cyan}move${colors.reset} <id>          Move task to a list
   ${colors.cyan}tag${colors.reset} <id>           Manage task tags
+  ${colors.cyan}export${colors.reset} <source>    Export tasks (md, csv, json)
 
-${colors.bold}Options:${colors.reset}
+${colors.bold}Global Options:${colors.reset}
   --json             Output as JSON
   --verbose, -v      Show more details
+  --compact          Single-line output format
+  --ids              Output only UUIDs (for scripting)
   --limit <n>        Limit results (for logbook)
-  
+
+${colors.bold}Filter Options:${colors.reset} (for list commands)
+  --tag <name>       Filter by tag
+  --area <name>      Filter by area  
+  --project <name>   Filter by project
+
 ${colors.bold}Add Options:${colors.reset}
   --notes <text>     Add notes
   --when <date>      Schedule date (today, tomorrow, anytime, someday, YYYY-MM-DD)
   --deadline <date>  Set deadline (YYYY-MM-DD)
   --tags <tags>      Add tags (comma-separated)
+  --checklist <items> Checklist items (comma-separated)
   --list <list>      Target list (inbox, anytime, someday)
   --project <name>   Add to project (partial match)
   --area <name>      Add to area (partial match)
   --heading <name>   Add under heading in project
+
+${colors.bold}Update Options:${colors.reset}
+  --title <text>     Change title
+  --notes <text>     Replace notes
+  --append-notes <text>  Append to notes
+  --prepend-notes <text> Prepend to notes
+  --when <date>      Change schedule date
+  --deadline <date>  Change deadline
+  --add-tags <tags>  Add tags (comma-separated)
 
 ${colors.bold}Move Options:${colors.reset}
   --to <list>        Target: today, anytime, someday, or date
@@ -1065,13 +1486,28 @@ ${colors.bold}Tag Options:${colors.reset}
   --add <tag>        Add a tag
   --remove <tag>     Remove a tag
 
+${colors.bold}Export Options:${colors.reset}
+  --format <fmt>     Output format: md, csv, json (default: md)
+
 ${colors.bold}Examples:${colors.reset}
   thingsctl today
-  thingsctl today --json
-  thingsctl search "buy groceries"
+  thingsctl today --tag Deep            # Filter Today by tag
+  thingsctl anytime --area Finance      # Filter Anytime by area
+  thingsctl someday --compact           # Compact output
+  thingsctl today --ids                 # Just UUIDs for scripting
+  
   thingsctl add "Call mom" --when today --tags Phone
-  thingsctl complete 7Ae
-  thingsctl move 7Ae --to someday
+  thingsctl add "Trip prep" --checklist "Passport,Tickets,Charger"
+  
+  thingsctl update 7Ae --title "New title"
+  thingsctl update 7Ae --append-notes "Added context"
+  thingsctl update 7Ae --when tomorrow --deadline 2026-03-15
+  
+  thingsctl complete 7Ae                # Single task
+  thingsctl complete 17jJ ANsB 9pUS     # Bulk complete
+  
+  thingsctl export today --format md
+  thingsctl export project "CoStudy" --format csv
 `);
 }
 
@@ -1110,7 +1546,14 @@ async function main() {
     const opts = {
       json: parsed.options.json || false,
       verbose: parsed.options.verbose || parsed.options.v || false,
-      limit: parsed.options.limit ? parseInt(parsed.options.limit) : undefined
+      limit: parsed.options.limit ? parseInt(parsed.options.limit) : undefined,
+      // Output formatting options
+      compact: parsed.options.compact || false,
+      ids: parsed.options.ids || false,
+      // Filter options
+      tag: parsed.options.tag,
+      area: parsed.options.area,
+      project: parsed.options.project
     };
     
     switch (parsed.command) {
@@ -1180,14 +1623,41 @@ async function main() {
           list: parsed.options.list,
           project: parsed.options.project,
           area: parsed.options.area,
-          heading: parsed.options.heading
+          heading: parsed.options.heading,
+          checklist: parsed.options.checklist
         });
         break;
       case 'complete':
         if (!parsed.args[0]) {
+          throw new Error('Task ID(s) required');
+        }
+        // Support bulk completion: thingsctl complete id1 id2 id3
+        result = cli.complete(parsed.args.length > 1 ? parsed.args : parsed.args[0]);
+        break;
+      case 'update':
+        if (!parsed.args[0]) {
           throw new Error('Task ID required');
         }
-        result = cli.complete(parsed.args[0]);
+        result = cli.update(parsed.args[0], {
+          title: parsed.options.title,
+          notes: parsed.options.notes,
+          'append-notes': parsed.options['append-notes'],
+          'prepend-notes': parsed.options['prepend-notes'],
+          when: parsed.options.when,
+          deadline: parsed.options.deadline,
+          'add-tags': parsed.options['add-tags'],
+          completed: parsed.options.completed,
+          canceled: parsed.options.canceled
+        });
+        break;
+      case 'export':
+        if (!parsed.args[0]) {
+          throw new Error('Export source required (today, anytime, someday, inbox, project, area)');
+        }
+        result = cli.export(parsed.args[0], {
+          format: parsed.options.format || 'md',
+          name: parsed.args[1] // For project/area name
+        });
         break;
       case 'move':
         if (!parsed.args[0]) {

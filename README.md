@@ -46,6 +46,8 @@ thingsctl add --help
 thingsctl today
 thingsctl today --verbose    # Show area/project context
 thingsctl today --json       # JSON output for scripting
+thingsctl today --compact    # Single-line format
+thingsctl today --ids        # Just UUIDs (for scripting)
 
 # Other lists
 thingsctl inbox
@@ -56,6 +58,27 @@ thingsctl due                # Tasks with deadlines
 thingsctl repeating          # Recurring tasks
 thingsctl logbook            # Recently completed
 thingsctl logbook --limit 50 # More completed tasks
+```
+
+### Filtering Tasks
+
+Filter any list command by tag, area, or project:
+
+```bash
+# Filter by tag
+thingsctl today --tag Deep
+thingsctl anytime --tag Urgent
+
+# Filter by area
+thingsctl anytime --area Finance
+thingsctl someday --area Home
+
+# Filter by project
+thingsctl someday --project CoStudy
+
+# Combine with output options
+thingsctl today --tag Deep --compact
+thingsctl anytime --area Work --ids
 ```
 
 ### Projects & Organization
@@ -127,6 +150,10 @@ thingsctl add "Tax filing" --deadline 2024-04-15
 # With tags (must exist in Things)
 thingsctl add "Weekly review" --tags "Review,Deep"
 
+# With checklist items
+thingsctl add "Trip prep" --checklist "Passport,Tickets,Charger"
+thingsctl add "Morning routine" --checklist "Exercise,Shower,Breakfast,Review tasks"
+
 # Into a project (partial name match)
 thingsctl add "Fix login bug" --project "Website"
 thingsctl add "Review docs" --project Costudy
@@ -144,12 +171,41 @@ thingsctl add "Final test" --project "Launch" --heading "QA Tasks"
 thingsctl add "Critical fix" --when today --deadline 2024-03-10 --tags Urgent --project "App"
 ```
 
+### Updating Tasks
+
+```bash
+# Change title
+thingsctl update 17jJ --title "New task title"
+
+# Update notes
+thingsctl update 17jJ --notes "Completely replace notes"
+thingsctl update 17jJ --append-notes "Add this to the end"
+thingsctl update 17jJ --prepend-notes "Add this at the start"
+
+# Reschedule
+thingsctl update 17jJ --when tomorrow
+thingsctl update 17jJ --when "next week"
+thingsctl update 17jJ --when 2026-03-15
+
+# Set/change deadline
+thingsctl update 17jJ --deadline 2026-03-20
+
+# Add tags
+thingsctl update 17jJ --add-tags "Important,Urgent"
+
+# Multiple updates at once
+thingsctl update 17jJ --when today --deadline 2026-03-20 --add-tags Priority
+```
+
 ### Completing Tasks
 
 ```bash
-# Use partial UUID from any list command
+# Single task (use partial UUID from any list command)
 thingsctl complete 17jJ
 thingsctl complete ANsB
+
+# Bulk complete multiple tasks at once
+thingsctl complete 17jJ ANsB 9pUS
 ```
 
 ### Moving Tasks
@@ -174,6 +230,31 @@ thingsctl tag 17jJ --add Important
 thingsctl tag 17jJ --add "Deep Work"
 ```
 
+### Exporting Tasks
+
+Export tasks in various formats:
+
+```bash
+# Export to markdown (default)
+thingsctl export today
+thingsctl export today --format md > today.md
+
+# Export to CSV
+thingsctl export today --format csv > today.csv
+thingsctl export project "CoStudy" --format csv
+
+# Export to JSON
+thingsctl export anytime --format json
+
+# Export from different sources
+thingsctl export today
+thingsctl export anytime
+thingsctl export someday
+thingsctl export inbox
+thingsctl export project "Project Name"
+thingsctl export area "Area Name"
+```
+
 ### JSON Output
 
 All commands support `--json` for scripting:
@@ -196,8 +277,20 @@ thingsctl search "meeting" --json | jq -r '.[].uuid'
 |--------|-------------|
 | `--json` | Output as JSON |
 | `--verbose`, `-v` | Show more details (area/project context) |
+| `--compact` | Single-line output format |
+| `--ids` | Output only UUIDs (for scripting) |
 | `--help`, `-h` | Show help (global or command-specific) |
 | `--version`, `-V` | Show version |
+
+## Filter Options
+
+Available for list commands (today, anytime, someday, inbox, upcoming):
+
+| Option | Description |
+|--------|-------------|
+| `--tag <name>` | Filter by tag (partial match) |
+| `--area <name>` | Filter by area (partial match) |
+| `--project <name>` | Filter by project (partial match) |
 
 ## AI Agent Integration
 
@@ -206,9 +299,12 @@ thingsctl is designed to work seamlessly with AI assistants and agents (Claude, 
 ### Why thingsctl for agents?
 
 - **Structured output**: `--json` returns clean, parseable data
-- **Full CRUD**: Read tasks, add new ones, complete them, move between lists
+- **Full CRUD**: Read tasks, add new ones, update them, complete them
+- **Bulk operations**: Complete multiple tasks at once
 - **Partial UUID matching**: Agents can reference tasks with short IDs (e.g., `17jJ` instead of full UUID)
 - **Natural language dates**: `--when tomorrow`, `--when "next week"` work intuitively
+- **Filtering**: Find tasks by tag, area, or project
+- **Export**: Generate markdown/CSV reports
 - **Search**: Find tasks by keyword without knowing exact titles
 - **Context-aware**: `--verbose` shows project/area context for better understanding
 
@@ -218,12 +314,23 @@ thingsctl is designed to work seamlessly with AI assistants and agents (Claude, 
 # Agent checks what's on today's list
 thingsctl today --json
 
-# Agent adds a task from conversation
-thingsctl add "Book flight to Denver" --when tomorrow --project "Denver Trip"
+# Agent filters to specific tags
+thingsctl today --tag Deep --json
 
-# Agent completes a task the user mentioned
-thingsctl search "dentist" --json  # Find the task
-thingsctl complete 7Ae              # Complete it
+# Agent adds a task with checklist
+thingsctl add "Trip prep" --checklist "Passport,Tickets,Hotels"
+
+# Agent updates a task
+thingsctl update 7Ae --when tomorrow --append-notes "Discussed in meeting"
+
+# Agent bulk completes tasks
+thingsctl complete 17jJ ANsB 9pUS
+
+# Agent exports today for summary
+thingsctl export today --format md
+
+# Get just IDs for scripting
+TODAY_TASKS=$(thingsctl today --ids | tr '\n' ' ')
 
 # Agent provides a daily briefing
 thingsctl today --json | jq -r '.[] | "- \(.title)"'
@@ -237,10 +344,14 @@ thingsctl due --json | jq '.[] | select(.deadline <= "2024-03-15")'
 ```
 You have access to Things 3 via thingsctl. Use these commands:
 - `thingsctl today --json` — Get today's tasks
+- `thingsctl today --tag <tag> --json` — Filter by tag
 - `thingsctl add "<title>" --when today` — Add a task
+- `thingsctl add "<title>" --checklist "Item1,Item2"` — Add with checklist
+- `thingsctl update <id> --title "New"` — Update task
 - `thingsctl complete <id>` — Mark task done
+- `thingsctl complete <id1> <id2> <id3>` — Bulk complete
 - `thingsctl search "<query>" --json` — Find tasks
-- `thingsctl due --json` — Check deadlines
+- `thingsctl export today --format md` — Export as markdown
 ```
 
 ## How It Works
@@ -275,7 +386,8 @@ Due to Things URL scheme constraints:
 1. **Cannot create tags** — Tags must already exist in Things
 2. **Cannot set recurrence** — Repeating tasks must be created in the app
 3. **Cannot move to Inbox** — URL scheme doesn't support this
-4. **Things must be running** — For write operations
+4. **Cannot create headings** — Headings must already exist in projects
+5. **Things must be running** — For write operations
 
 ## Shell Integration
 
@@ -288,6 +400,7 @@ alias tt="thingsctl today --verbose"
 alias ta="thingsctl add"
 alias tc="thingsctl complete"
 alias ts="thingsctl search"
+alias te="thingsctl export today --format md"
 ```
 
 ### fzf Integration
@@ -296,6 +409,23 @@ alias ts="thingsctl search"
 # Select and complete a task interactively
 thingsctl today --json | jq -r '.[] | "\(.uuid)\t\(.title)"' | \
   fzf --with-nth=2 | cut -f1 | xargs thingsctl complete
+
+# Select and update a task
+TASK=$(thingsctl today --json | jq -r '.[] | "\(.uuid)\t\(.title)"' | fzf --with-nth=2 | cut -f1)
+thingsctl update $TASK --when tomorrow
+```
+
+### Scripting Examples
+
+```bash
+# Complete all tasks with a specific tag
+thingsctl today --tag Done --ids | xargs thingsctl complete
+
+# Export today's tasks to clipboard
+thingsctl export today --format md | pbcopy
+
+# Daily task count
+echo "Today: $(thingsctl today --ids | wc -l | tr -d ' ') tasks"
 ```
 
 ## License
