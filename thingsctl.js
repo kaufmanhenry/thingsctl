@@ -564,7 +564,8 @@ class ThingsCLI {
     // Handle heading (section within a project)
     if (options.heading) params.set('heading', options.heading);
     
-    const url = `things:///add?${params.toString()}`;
+    // URLSearchParams encodes spaces as +, but Things URL scheme needs %20
+    const url = `things:///add?${params.toString().replace(/\+/g, '%20')}`;
     
     try {
       execSync(`open "${url}"`);
@@ -976,7 +977,8 @@ class ThingsCLI {
       params.set('canceled', options.canceled ? 'true' : 'false');
     }
     
-    const url = `things:///update?${params.toString()}`;
+    // URLSearchParams encodes spaces as +, but Things URL scheme needs %20
+    const url = `things:///update?${params.toString().replace(/\+/g, '%20')}`;
     
     try {
       execSync(`open "${url}"`);
