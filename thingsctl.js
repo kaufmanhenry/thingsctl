@@ -741,10 +741,10 @@ function parseArgs(args) {
 
 function printHelp() {
   console.log(`
-${colors.bold}Things 3 CLI${colors.reset}
+${colors.bold}thingsctl - Things 3 CLI${colors.reset}
 
 ${colors.bold}Usage:${colors.reset}
-  things <command> [args] [options]
+  thingsctl <command> [args] [options]
 
 ${colors.bold}Commands:${colors.reset}
   ${colors.cyan}today${colors.reset}              Show Today's tasks
@@ -786,12 +786,12 @@ ${colors.bold}Tag Options:${colors.reset}
   --remove <tag>     Remove a tag
 
 ${colors.bold}Examples:${colors.reset}
-  things today
-  things today --json
-  things search "buy groceries"
-  things add "Call mom" --when today --tags Phone
-  things complete 7Ae
-  things move 7Ae --to someday
+  thingsctl today
+  thingsctl today --json
+  thingsctl search "buy groceries"
+  thingsctl add "Call mom" --when today --tags Phone
+  thingsctl complete 7Ae
+  thingsctl move 7Ae --to someday
 `);
 }
 
