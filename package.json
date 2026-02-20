@@ -1,0 +1,37 @@
+{
+  "name": "thingsctl",
+  "version": "1.0.0",
+  "description": "A command-line interface for Things 3 that actually matches the UI",
+  "main": "thingsctl.js",
+  "bin": {
+    "thingsctl": "./thingsctl.js"
+  },
+  "scripts": {
+    "test": "node thingsctl.js today"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henrykaufman/thingsctl.git"
+  },
+  "keywords": [
+    "things",
+    "things3",
+    "gtd",
+    "task-management",
+    "cli",
+    "macos",
+    "productivity"
+  ],
+  "author": "Henry Kaufman",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/henrykaufman/thingsctl/issues"
+  },
+  "homepage": "https://github.com/henrykaufman/thingsctl#readme",
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
