@@ -1,12 +1,6 @@
 # thingsctl
 
-A command-line interface for [Things 3](https://culturedcode.com/things/) that **actually matches the UI**.
-
-## Why?
-
-Other Things CLI tools return incorrect results because they misunderstand Things 3's internal data model. For example, they might show 61 tasks in "Today" when the app only shows 5.
-
-**thingsctl** correctly interprets the Things 3 SQLite database by understanding that `todayIndex > 0` means a task is in Today—not just any non-zero value.
+A full-featured command-line interface for [Things 3](https://culturedcode.com/things/) on macOS.
 
 ## Installation
 
@@ -18,7 +12,7 @@ Other Things CLI tools return incorrect results because they misunderstand Thing
 ### Install from source
 
 ```bash
-git clone https://github.com/henrykaufman/thingsctl.git
+git clone https://github.com/kaufmanhenry/thingsctl.git
 cd thingsctl
 npm install
 npm link
@@ -48,7 +42,7 @@ thingsctl add --help
 ### Viewing Tasks
 
 ```bash
-# Today's tasks (matches Things UI exactly!)
+# Today's tasks
 thingsctl today
 thingsctl today --verbose    # Show area/project context
 thingsctl today --json       # JSON output for scripting
@@ -150,11 +144,6 @@ thingsctl add "Final test" --project "Launch" --heading "QA Tasks"
 thingsctl add "Critical fix" --when today --deadline 2024-03-10 --tags Urgent --project "App"
 ```
 
-Get command-specific help:
-```bash
-thingsctl add --help
-```
-
 ### Completing Tasks
 
 ```bash
@@ -187,7 +176,7 @@ thingsctl tag 17jJ --add "Deep Work"
 
 ### JSON Output
 
-All commands support `--json` for programmatic use:
+All commands support `--json` for scripting:
 
 ```bash
 # Pipe to jq
@@ -199,25 +188,6 @@ thingsctl today --json | jq length
 
 # Extract task IDs
 thingsctl search "meeting" --json | jq -r '.[].uuid'
-```
-
-Example JSON output:
-```json
-[
-  {
-    "uuid": "17jJuooocGSZxKNv3JuxRx",
-    "title": "Look into canceling AAA",
-    "notes": null,
-    "status": "open",
-    "startDate": null,
-    "deadline": null,
-    "tags": [],
-    "project": null,
-    "area": "🏠 Home",
-    "inToday": true,
-    "list": "someday"
-  }
-]
 ```
 
 ## Global Options
@@ -233,67 +203,35 @@ Example JSON output:
 
 ### Read Operations
 
-thingsctl reads directly from the Things 3 SQLite database:
+thingsctl reads directly from the Things 3 SQLite database (read-only mode):
 
 ```
 ~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/
   ThingsData-C1ON7/Things Database.thingsdatabase/main.sqlite
 ```
 
-The database is opened in **read-only mode**—thingsctl never modifies it directly.
-
 ### Write Operations
 
-All modifications use the [Things URL Scheme](https://culturedcode.com/things/support/articles/2803573/):
+All modifications use the [Things URL Scheme](https://culturedcode.com/things/support/articles/2803573/), the official way to interact with Things programmatically.
 
-```
-things:///add?title=Buy%20milk&when=today
-things:///update?id=UUID&completed=true
-```
-
-This is the official, safe way to interact with Things programmatically.
-
-### Key Data Model Insights
+### Key Data Model
 
 | Field | Values | Meaning |
 |-------|--------|---------|
 | `todayIndex` | `> 0` | Task is in Today |
-| `todayIndex` | `< 0` | Was in Today, moved out |
-| `todayIndex` | `0` | Never in Today |
 | `start` | `0` | Inbox |
 | `start` | `1` | Anytime |
 | `start` | `2` | Someday |
-| `type` | `0` | Task |
-| `type` | `1` | Project |
-| `type` | `2` | Heading |
-| `status` | `0` | Open |
-| `status` | `2` | Canceled |
-| `status` | `3` | Completed |
 | `startDate` | Unix timestamp | Scheduled date |
-| `rt1_recurrenceRule` | BLOB | Recurrence config |
 
 ## Limitations
 
 Due to Things URL scheme constraints:
 
 1. **Cannot create tags** — Tags must already exist in Things
-2. **Cannot set recurrence** — Repeating tasks must be created manually
+2. **Cannot set recurrence** — Repeating tasks must be created in the app
 3. **Cannot move to Inbox** — URL scheme doesn't support this
-4. **Things must be running** — For any write operations
-5. **Cannot remove tags** — Would replace all tags (limitation)
-
-## Comparison with Other Tools
-
-| Feature | thingsctl | clings | things-cli |
-|---------|-----------|--------|------------|
-| Today accuracy | ✅ Correct | ❌ Wrong | ❌ Limited |
-| Full SQLite access | ✅ | ✅ | ❌ |
-| JSON output | ✅ | ❌ | ✅ |
-| Search | ✅ | ✅ | ❌ |
-| URL scheme writes | ✅ | ❌ | ✅ |
-| Repeating tasks | ✅ | ❌ | ❌ |
-| Deadline tracking | ✅ | ❌ | ❌ |
-| Project/area assignment | ✅ | ❌ | Partial |
+4. **Things must be running** — For write operations
 
 ## Shell Integration
 
@@ -308,14 +246,6 @@ alias tc="thingsctl complete"
 alias ts="thingsctl search"
 ```
 
-### Fish Functions
-
-```fish
-# Add to ~/.config/fish/functions/
-function t; thingsctl today $argv; end
-function ta; thingsctl add $argv; end
-```
-
 ### fzf Integration
 
 ```bash
@@ -324,28 +254,6 @@ thingsctl today --json | jq -r '.[] | "\(.uuid)\t\(.title)"' | \
   fzf --with-nth=2 | cut -f1 | xargs thingsctl complete
 ```
 
-## Development
-
-```bash
-# Run locally without installing
-node thingsctl.js today
-
-# Run tests
-npm test
-
-# Check version
-node thingsctl.js --version
-```
-
 ## License
 
 MIT
-
-## Contributing
-
-Issues and PRs welcome! This started as a personal tool to fix the "Today shows wrong count" problem.
-
-## Credits
-
-- [Cultured Code](https://culturedcode.com/) for making Things 3
-- Inspired by frustration with `clings` returning 61 tasks when Things showed 5
