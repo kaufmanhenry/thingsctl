@@ -26,96 +26,161 @@ npm link
 
 This installs `thingsctl` globally on your system.
 
-## Usage
+## Quick Start
+
+```bash
+# See today's tasks
+thingsctl today
+
+# Add a task to today
+thingsctl add "Call dentist" --when today
+
+# Complete a task
+thingsctl complete 17jJ
+
+# Get help
+thingsctl --help
+thingsctl add --help
+```
+
+## Commands Reference
 
 ### Viewing Tasks
 
 ```bash
 # Today's tasks (matches Things UI exactly!)
 thingsctl today
+thingsctl today --verbose    # Show area/project context
+thingsctl today --json       # JSON output for scripting
 
 # Other lists
 thingsctl inbox
 thingsctl anytime
 thingsctl someday
-thingsctl upcoming
-
-# With JSON output for scripting
-thingsctl today --json
+thingsctl upcoming           # Scheduled for future dates
+thingsctl due                # Tasks with deadlines
+thingsctl repeating          # Recurring tasks
+thingsctl logbook            # Recently completed
+thingsctl logbook --limit 50 # More completed tasks
 ```
 
 ### Projects & Organization
 
 ```bash
-# List all projects
+# List all projects with task counts
 thingsctl projects
 
 # Show tasks in a specific project
 thingsctl project "Wedding Planning"
 thingsctl project Wedding          # Partial match works
 
-# List areas and tags
+# List areas with task/project counts
 thingsctl areas
+
+# List all tags with usage counts
 thingsctl tags
 ```
 
 ### Search & Details
 
 ```bash
-# Full-text search
+# Full-text search across titles and notes
 thingsctl search "birthday"
-thingsctl search groceries
+thingsctl search groceries --verbose
 
-# Show task details (partial UUID works)
+# Show detailed task info (partial UUID works)
 thingsctl show 17jJ
-thingsctl show 17jJuooocGSZxKNv3JuxRx
-
-# Recently completed tasks
-thingsctl logbook
-thingsctl logbook --limit 50
+thingsctl show 17jJuooocGSZxKNv3JuxRx --json
 ```
 
 ### Statistics
 
 ```bash
 thingsctl stats
-
-# Output:
-# Things 3 Statistics
-#
-# Today:          5
-# Inbox:          0
-# Anytime:        10
-# Someday:        53
-# Upcoming:       13
-#
-# Total Open:     132
-# Completed Today: 14
-# Projects:       18
 ```
 
-### Creating & Modifying Tasks
+Output:
+```
+Things 3 Statistics
 
-Uses Things URL scheme for safe write operations:
+Today:          5
+Inbox:          0
+Anytime:        10
+Someday:        53
+Upcoming:       13
+
+Total Open:     132
+Completed Today: 14
+Projects:       18
+```
+
+### Adding Tasks
 
 ```bash
-# Add a new task
+# Basic
 thingsctl add "Buy milk"
+
+# With scheduling
 thingsctl add "Call mom" --when today
-thingsctl add "Review proposal" --when tomorrow --deadline 2024-03-15
+thingsctl add "Review proposal" --when tomorrow
+thingsctl add "Someday project" --when someday
+thingsctl add "Next week task" --when "next week"
+thingsctl add "Specific date" --when 2024-03-15
+
+# With deadline
+thingsctl add "Tax filing" --deadline 2024-04-15
+
+# With tags (must exist in Things)
 thingsctl add "Weekly review" --tags "Review,Deep"
-thingsctl add "Fix bug" --project "App Maintenance"
 
-# Complete a task
+# Into a project (partial name match)
+thingsctl add "Fix login bug" --project "Website"
+thingsctl add "Review docs" --project Costudy
+
+# Into an area (partial name match)
+thingsctl add "Pay rent" --area Finance
+
+# With notes
+thingsctl add "Research topic" --notes "Check the PDF in Downloads"
+
+# Into a heading within a project
+thingsctl add "Final test" --project "Launch" --heading "QA Tasks"
+
+# Combined
+thingsctl add "Critical fix" --when today --deadline 2024-03-10 --tags Urgent --project "App"
+```
+
+Get command-specific help:
+```bash
+thingsctl add --help
+```
+
+### Completing Tasks
+
+```bash
+# Use partial UUID from any list command
 thingsctl complete 17jJ
+thingsctl complete ANsB
+```
 
-# Move task to different list
+### Moving Tasks
+
+```bash
+# Move to lists
 thingsctl move 17jJ --to today
 thingsctl move 17jJ --to anytime
 thingsctl move 17jJ --to someday
-thingsctl move 17jJ --to 2024-03-20   # Schedule for specific date
 
-# Manage tags
+# Schedule for specific date
+thingsctl move 17jJ --to 2024-03-20
+thingsctl move 17jJ --to "next week"
+thingsctl move 17jJ --to tomorrow
+```
+
+### Managing Tags
+
+```bash
+# Add tags (tag must exist in Things)
 thingsctl tag 17jJ --add Important
 thingsctl tag 17jJ --add "Deep Work"
 ```
@@ -129,13 +194,14 @@ All commands support `--json` for programmatic use:
 thingsctl today --json | jq '.[].title'
 thingsctl stats --json | jq '.today'
 
-# Use in scripts
-TASKS=$(thingsctl today --json)
-COUNT=$(echo "$TASKS" | jq length)
+# Count today's tasks
+thingsctl today --json | jq length
+
+# Extract task IDs
+thingsctl search "meeting" --json | jq -r '.[].uuid'
 ```
 
-### Example JSON Output
-
+Example JSON output:
 ```json
 [
   {
@@ -153,6 +219,15 @@ COUNT=$(echo "$TASKS" | jq length)
   }
 ]
 ```
+
+## Global Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON |
+| `--verbose`, `-v` | Show more details (area/project context) |
+| `--help`, `-h` | Show help (global or command-specific) |
+| `--version`, `-V` | Show version |
 
 ## How It Works
 
@@ -195,6 +270,7 @@ This is the official, safe way to interact with Things programmatically.
 | `status` | `2` | Canceled |
 | `status` | `3` | Completed |
 | `startDate` | Unix timestamp | Scheduled date |
+| `rt1_recurrenceRule` | BLOB | Recurrence config |
 
 ## Limitations
 
@@ -204,6 +280,7 @@ Due to Things URL scheme constraints:
 2. **Cannot set recurrence** — Repeating tasks must be created manually
 3. **Cannot move to Inbox** — URL scheme doesn't support this
 4. **Things must be running** — For any write operations
+5. **Cannot remove tags** — Would replace all tags (limitation)
 
 ## Comparison with Other Tools
 
@@ -214,6 +291,38 @@ Due to Things URL scheme constraints:
 | JSON output | ✅ | ❌ | ✅ |
 | Search | ✅ | ✅ | ❌ |
 | URL scheme writes | ✅ | ❌ | ✅ |
+| Repeating tasks | ✅ | ❌ | ❌ |
+| Deadline tracking | ✅ | ❌ | ❌ |
+| Project/area assignment | ✅ | ❌ | Partial |
+
+## Shell Integration
+
+### Bash/Zsh Aliases
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+alias t="thingsctl today"
+alias tt="thingsctl today --verbose"
+alias ta="thingsctl add"
+alias tc="thingsctl complete"
+alias ts="thingsctl search"
+```
+
+### Fish Functions
+
+```fish
+# Add to ~/.config/fish/functions/
+function t; thingsctl today $argv; end
+function ta; thingsctl add $argv; end
+```
+
+### fzf Integration
+
+```bash
+# Select and complete a task interactively
+thingsctl today --json | jq -r '.[] | "\(.uuid)\t\(.title)"' | \
+  fzf --with-nth=2 | cut -f1 | xargs thingsctl complete
+```
 
 ## Development
 
@@ -223,6 +332,9 @@ node thingsctl.js today
 
 # Run tests
 npm test
+
+# Check version
+node thingsctl.js --version
 ```
 
 ## License
@@ -231,7 +343,7 @@ MIT
 
 ## Contributing
 
-Issues and PRs welcome! This started as a personal tool to fix the "Today shows wrong count" problem, but happy to expand it.
+Issues and PRs welcome! This started as a personal tool to fix the "Today shows wrong count" problem.
 
 ## Credits
 

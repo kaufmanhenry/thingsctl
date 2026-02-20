@@ -13,6 +13,8 @@ const path = require('path');
 const os = require('os');
 
 // Things 3 database path
+// This is the SQLite database that Things uses to store all data.
+// We open it in read-only mode for safety.
 const DB_PATH = path.join(
   os.homedir(),
   'Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-C1ON7/Things Database.thingsdatabase/main.sqlite'
@@ -145,10 +147,15 @@ class ThingsCLI {
       line += ` ${colors.cyan}#${tags.join(' #')}${colors.reset}`;
     }
     
-    // Project context
-    const project = this.getProjectName(task.project);
-    if (project && verbose) {
-      line += ` ${colors.dim}[${project}]${colors.reset}`;
+    // Project/Area context in verbose mode
+    if (verbose) {
+      const project = this.getProjectName(task.project);
+      const area = this.getAreaName(task.area);
+      if (project) {
+        line += ` ${colors.dim}[${project}]${colors.reset}`;
+      } else if (area) {
+        line += ` ${colors.dim}[${area}]${colors.reset}`;
+      }
     }
     
     // Due date
@@ -170,6 +177,13 @@ class ThingsCLI {
   }
 
   // TODAY: Tasks explicitly in Today (todayIndex > 0) OR scheduled for today/past
+  // 
+  // Key insight: todayIndex > 0 means the user explicitly added this to Today.
+  // A positive value means "in Today", not just "was once touched".
+  // This is what most other Things CLI tools get wrong!
+  //
+  // We also include tasks scheduled for today or earlier (startDate < today_end).
+  // startDate uses Unix timestamps, but values < 1000000000 are typically NULL/empty.
   today(options = {}) {
     const bounds = this.getTodayBounds();
     
@@ -532,7 +546,12 @@ class ThingsCLI {
     if (options.heading) params.set('heading', options.heading);
     
     const url = `things:///add?${params.toString()}`;
-    execSync(`open "${url}"`);
+    
+    try {
+      execSync(`open "${url}"`);
+    } catch (e) {
+      throw new Error('Failed to open Things. Is Things 3 installed and running?');
+    }
     
     let result = `${colors.green}✓${colors.reset} Added: ${title}`;
     if (options.project) result += ` → ${options.project}`;
@@ -544,16 +563,24 @@ class ThingsCLI {
   // COMPLETE: Mark task as complete via URL scheme
   complete(id) {
     // Get full UUID
-    const stmt = this.db.prepare(`SELECT uuid, title FROM TMTask WHERE uuid LIKE ?`);
+    const stmt = this.db.prepare(`SELECT uuid, title, status FROM TMTask WHERE uuid LIKE ?`);
     const task = stmt.get(`${id}%`);
     
     if (!task) {
-      throw new Error(`Task not found: ${id}`);
+      throw new Error(`Task not found: ${id}\nTip: Use 'thingsctl search' or 'thingsctl today' to find task IDs`);
+    }
+    
+    if (task.status === STATUS.COMPLETED) {
+      return `${colors.dim}Already completed: ${task.title}${colors.reset}`;
     }
     
     const url = `things:///update?id=${task.uuid}&completed=true`;
-    execSync(`open "${url}"`);
-    return `Completed: ${task.title}`;
+    try {
+      execSync(`open "${url}"`);
+    } catch (e) {
+      throw new Error('Failed to open Things. Is Things 3 running?');
+    }
+    return `${colors.green}✓${colors.reset} Completed: ${task.title}`;
   }
 
   // MOVE: Move task to a different list via URL scheme
@@ -1051,6 +1078,13 @@ ${colors.bold}Examples:${colors.reset}
 // Main
 async function main() {
   const args = process.argv.slice(2);
+  
+  // Version flag
+  if (args[0] === '--version' || args[0] === '-V') {
+    const pkg = require('./package.json');
+    console.log(`thingsctl v${pkg.version}`);
+    process.exit(0);
+  }
   
   // Global help
   if (args.length === 0 || args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
