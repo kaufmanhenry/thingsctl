@@ -296,13 +296,15 @@ class ThingsCLI {
   }
 
   // AREAS: List all areas
+  // Note: visible column is often NULL in Things DB, so we don't filter on it
   areas(options = {}) {
     const stmt = this.db.prepare(`
       SELECT a.*,
         (SELECT COUNT(*) FROM TMTask t 
-         WHERE t.area = a.uuid AND t.status = 0 AND t.trashed = 0) as taskCount
+         WHERE t.area = a.uuid AND t.status = 0 AND t.trashed = 0 AND t.type = 0) as taskCount,
+        (SELECT COUNT(*) FROM TMTask t 
+         WHERE t.area = a.uuid AND t.status = 0 AND t.trashed = 0 AND t.type = 1) as projectCount
       FROM TMArea a
-      WHERE a.visible = 1
       ORDER BY a.\`index\` ASC
     `);
     
@@ -312,14 +314,18 @@ class ThingsCLI {
       return areas.map(a => ({
         uuid: a.uuid,
         title: a.title,
-        taskCount: a.taskCount
+        taskCount: a.taskCount,
+        projectCount: a.projectCount
       }));
     }
     
     return areas.map(a => {
       let line = `📂 ${a.title}`;
-      if (a.taskCount > 0) {
-        line += ` ${colors.dim}(${a.taskCount})${colors.reset}`;
+      const counts = [];
+      if (a.taskCount > 0) counts.push(`${a.taskCount} tasks`);
+      if (a.projectCount > 0) counts.push(`${a.projectCount} projects`);
+      if (counts.length > 0) {
+        line += ` ${colors.dim}(${counts.join(', ')})${colors.reset}`;
       }
       return line;
     });
@@ -467,7 +473,29 @@ class ThingsCLI {
     return this.outputTasks(tasks, options);
   }
 
+  // Find area UUID by name (partial match)
+  findAreaByName(name) {
+    const stmt = this.db.prepare(`
+      SELECT uuid, title FROM TMArea 
+      WHERE title LIKE ?
+      LIMIT 1
+    `);
+    return stmt.get(`%${name}%`);
+  }
+
+  // Find project UUID by name (partial match)
+  findProjectByName(name) {
+    const stmt = this.db.prepare(`
+      SELECT uuid, title FROM TMTask 
+      WHERE type = 1 AND status = 0 AND trashed = 0
+        AND title LIKE ?
+      LIMIT 1
+    `);
+    return stmt.get(`%${name}%`);
+  }
+
   // ADD: Add a new task via Things URL scheme
+  // Supports: --notes, --when, --deadline, --tags, --list, --project, --area
   add(title, options = {}) {
     const params = new URLSearchParams();
     params.set('title', title);
@@ -476,12 +504,41 @@ class ThingsCLI {
     if (options.when) params.set('when', options.when);
     if (options.deadline) params.set('deadline', options.deadline);
     if (options.tags) params.set('tags', options.tags);
+    
+    // Handle list assignment (inbox, anytime, someday)
     if (options.list) params.set('list', options.list);
-    if (options.project) params.set('list', options.project);
+    
+    // Handle project assignment (takes precedence over list)
+    if (options.project) {
+      const project = this.findProjectByName(options.project);
+      if (project) {
+        params.set('list', project.title);
+      } else {
+        throw new Error(`Project not found: ${options.project}`);
+      }
+    }
+    
+    // Handle area assignment (via list-id parameter)
+    if (options.area) {
+      const area = this.findAreaByName(options.area);
+      if (area) {
+        params.set('list-id', area.uuid);
+      } else {
+        throw new Error(`Area not found: ${options.area}`);
+      }
+    }
+    
+    // Handle heading (section within a project)
+    if (options.heading) params.set('heading', options.heading);
     
     const url = `things:///add?${params.toString()}`;
     execSync(`open "${url}"`);
-    return `Added: ${title}`;
+    
+    let result = `${colors.green}✓${colors.reset} Added: ${title}`;
+    if (options.project) result += ` → ${options.project}`;
+    if (options.area) result += ` (${options.area})`;
+    if (options.when) result += ` [${options.when}]`;
+    return result;
   }
 
   // COMPLETE: Mark task as complete via URL scheme
@@ -585,6 +642,49 @@ class ThingsCLI {
       }
       if (t.shortcut) {
         line += ` ${colors.cyan}[${t.shortcut}]${colors.reset}`;
+      }
+      return line;
+    });
+  }
+
+  // DUE: Tasks with upcoming deadlines
+  due(options = {}) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM TMTask 
+      WHERE status = 0 
+        AND trashed = 0 
+        AND type = 0
+        AND deadline > 1000000000
+      ORDER BY deadline ASC
+    `);
+    
+    const tasks = stmt.all();
+    return this.outputTasks(tasks, { ...options, showDeadline: true });
+  }
+
+  // REPEATING: Show all repeating tasks
+  // Note: recurrence rule is stored in rt1_recurrenceRule as a BLOB
+  repeating(options = {}) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM TMTask 
+      WHERE status = 0 
+        AND trashed = 0 
+        AND type = 0
+        AND rt1_recurrenceRule IS NOT NULL
+      ORDER BY title ASC
+    `);
+    
+    const tasks = stmt.all();
+    
+    if (options.json) {
+      return tasks.map(t => this.formatTask(t, { json: true }));
+    }
+    
+    return tasks.map(t => {
+      let line = `🔄 ${t.title}`;
+      const tags = this.getTaskTags(t.uuid);
+      if (tags.length > 0) {
+        line += ` ${colors.cyan}#${tags.join(' #')}${colors.reset}`;
       }
       return line;
     });
@@ -739,6 +839,154 @@ function parseArgs(args) {
   return parsed;
 }
 
+function printCommandHelp(command) {
+  const helps = {
+    add: `
+${colors.bold}thingsctl add${colors.reset} - Add a new task
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl add <title> [options]
+
+${colors.bold}Options:${colors.reset}
+  --notes <text>     Add notes to the task
+  --when <date>      Schedule date:
+                     - today, tomorrow, evening, anytime, someday
+                     - next week, next month
+                     - YYYY-MM-DD (e.g., 2024-03-15)
+  --deadline <date>  Set deadline (YYYY-MM-DD)
+  --tags <tags>      Add tags (comma-separated)
+  --list <list>      Target list (inbox, anytime, someday)
+  --project <name>   Add to project (partial name match)
+  --area <name>      Add to area (partial name match)
+  --heading <name>   Add under heading in project
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl add "Buy groceries"
+  thingsctl add "Call mom" --when today --tags Phone
+  thingsctl add "Review quarterly goals" --when "next week" --deadline 2024-03-31
+  thingsctl add "Fix login bug" --project "Website Redesign"
+  thingsctl add "Tax planning" --area Finance --when someday
+  thingsctl add "Final touches" --project "Website" --heading "Launch Tasks"
+
+${colors.bold}Notes:${colors.reset}
+  - Tags must already exist in Things (URL scheme limitation)
+  - Project/area names are matched partially (case-insensitive)
+`,
+    complete: `
+${colors.bold}thingsctl complete${colors.reset} - Mark a task as complete
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl complete <id>
+
+${colors.bold}Arguments:${colors.reset}
+  <id>    Task UUID (partial match supported)
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl complete 7Ae3
+  thingsctl complete 17jJuoooc
+
+${colors.bold}Tip:${colors.reset} Use 'thingsctl today' or 'thingsctl search' to find task IDs.
+`,
+    move: `
+${colors.bold}thingsctl move${colors.reset} - Move a task to a different list
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl move <id> --to <destination>
+
+${colors.bold}Arguments:${colors.reset}
+  <id>    Task UUID (partial match supported)
+
+${colors.bold}Options:${colors.reset}
+  --to <dest>    Destination:
+                 - today, anytime, someday
+                 - tomorrow, evening, next week
+                 - YYYY-MM-DD (schedule for specific date)
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl move 7Ae3 --to today
+  thingsctl move 7Ae3 --to someday
+  thingsctl move 7Ae3 --to 2024-03-15
+  thingsctl move 7Ae3 --to "next week"
+
+${colors.bold}Note:${colors.reset} Moving to inbox is not supported via URL scheme.
+`,
+    tag: `
+${colors.bold}thingsctl tag${colors.reset} - Add or remove tags from a task
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl tag <id> --add <tag>
+  thingsctl tag <id> --remove <tag>
+
+${colors.bold}Arguments:${colors.reset}
+  <id>    Task UUID (partial match supported)
+
+${colors.bold}Options:${colors.reset}
+  --add <tag>       Add a tag to the task
+  --remove <tag>    Remove a tag (limited support)
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl tag 7Ae3 --add "Important"
+  thingsctl tag 7Ae3 --add "Home,Errand"
+
+${colors.bold}Limitations:${colors.reset}
+  - Tags must already exist in Things
+  - Removing tags may replace all existing tags (URL scheme limitation)
+`,
+    show: `
+${colors.bold}thingsctl show${colors.reset} - Show task details
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl show <id> [--json]
+
+${colors.bold}Arguments:${colors.reset}
+  <id>    Task UUID (partial match supported)
+
+${colors.bold}Options:${colors.reset}
+  --json    Output as JSON
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl show 7Ae3
+  thingsctl show 17jJ --json
+`,
+    search: `
+${colors.bold}thingsctl search${colors.reset} - Search tasks by title or notes
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl search <query> [options]
+
+${colors.bold}Options:${colors.reset}
+  --json       Output as JSON
+  --verbose    Show project context
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl search "groceries"
+  thingsctl search "meeting" --json
+`,
+    project: `
+${colors.bold}thingsctl project${colors.reset} - Show tasks in a project
+
+${colors.bold}Usage:${colors.reset}
+  thingsctl project <name> [options]
+
+${colors.bold}Arguments:${colors.reset}
+  <name>    Project name or UUID (partial match supported)
+
+${colors.bold}Options:${colors.reset}
+  --json    Output as JSON
+
+${colors.bold}Examples:${colors.reset}
+  thingsctl project "Website"
+  thingsctl project LinkedIn --json
+`
+  };
+
+  if (helps[command]) {
+    console.log(helps[command]);
+    return true;
+  }
+  return false;
+}
+
 function printHelp() {
   console.log(`
 ${colors.bold}thingsctl - Things 3 CLI${colors.reset}
@@ -752,6 +1000,8 @@ ${colors.bold}Commands:${colors.reset}
   ${colors.cyan}someday${colors.reset}            Show Someday tasks
   ${colors.cyan}inbox${colors.reset}              Show Inbox tasks
   ${colors.cyan}upcoming${colors.reset}           Show scheduled tasks
+  ${colors.cyan}due${colors.reset}                Show tasks with deadlines
+  ${colors.cyan}repeating${colors.reset}          Show repeating tasks
   ${colors.cyan}projects${colors.reset}           List all projects
   ${colors.cyan}project${colors.reset} <name>     Show tasks in a project
   ${colors.cyan}areas${colors.reset}              List all areas
@@ -773,10 +1023,13 @@ ${colors.bold}Options:${colors.reset}
   
 ${colors.bold}Add Options:${colors.reset}
   --notes <text>     Add notes
-  --when <date>      Schedule date (today, tomorrow, etc.)
-  --deadline <date>  Set deadline
+  --when <date>      Schedule date (today, tomorrow, anytime, someday, YYYY-MM-DD)
+  --deadline <date>  Set deadline (YYYY-MM-DD)
   --tags <tags>      Add tags (comma-separated)
-  --project <name>   Add to project
+  --list <list>      Target list (inbox, anytime, someday)
+  --project <name>   Add to project (partial match)
+  --area <name>      Add to area (partial match)
+  --heading <name>   Add under heading in project
 
 ${colors.bold}Move Options:${colors.reset}
   --to <list>        Target: today, anytime, someday, or date
@@ -799,12 +1052,23 @@ ${colors.bold}Examples:${colors.reset}
 async function main() {
   const args = process.argv.slice(2);
   
+  // Global help
   if (args.length === 0 || args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
     printHelp();
     process.exit(0);
   }
   
   const parsed = parseArgs(args);
+  
+  // Command-specific help (e.g., "thingsctl add --help")
+  if (parsed.options.help || parsed.options.h) {
+    if (printCommandHelp(parsed.command)) {
+      process.exit(0);
+    } else {
+      printHelp();
+      process.exit(0);
+    }
+  }
   const cli = new ThingsCLI();
   
   try {
@@ -830,6 +1094,12 @@ async function main() {
         break;
       case 'upcoming':
         result = cli.upcoming(opts);
+        break;
+      case 'due':
+        result = cli.due(opts);
+        break;
+      case 'repeating':
+        result = cli.repeating(opts);
         break;
       case 'projects':
         result = cli.projects(opts);
@@ -873,7 +1143,10 @@ async function main() {
           when: parsed.options.when,
           deadline: parsed.options.deadline,
           tags: parsed.options.tags,
-          project: parsed.options.project
+          list: parsed.options.list,
+          project: parsed.options.project,
+          area: parsed.options.area,
+          heading: parsed.options.heading
         });
         break;
       case 'complete':
