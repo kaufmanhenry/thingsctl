@@ -1,6 +1,6 @@
 # thingsctl
 
-A full-featured command-line interface for [Things 3](https://culturedcode.com/things/) on macOS.
+A full-featured command-line interface for [Things 3](https://culturedcode.com/things/) on macOS. Designed for both human use and AI agent integration.
 
 ## Installation
 
@@ -198,6 +198,50 @@ thingsctl search "meeting" --json | jq -r '.[].uuid'
 | `--verbose`, `-v` | Show more details (area/project context) |
 | `--help`, `-h` | Show help (global or command-specific) |
 | `--version`, `-V` | Show version |
+
+## AI Agent Integration
+
+thingsctl is designed to work seamlessly with AI assistants and agents (Claude, GPT, etc.). The `--json` flag on all commands provides structured output that's easy for agents to parse and act on.
+
+### Why thingsctl for agents?
+
+- **Structured output**: `--json` returns clean, parseable data
+- **Full CRUD**: Read tasks, add new ones, complete them, move between lists
+- **Partial UUID matching**: Agents can reference tasks with short IDs (e.g., `17jJ` instead of full UUID)
+- **Natural language dates**: `--when tomorrow`, `--when "next week"` work intuitively
+- **Search**: Find tasks by keyword without knowing exact titles
+- **Context-aware**: `--verbose` shows project/area context for better understanding
+
+### Example agent workflows
+
+```bash
+# Agent checks what's on today's list
+thingsctl today --json
+
+# Agent adds a task from conversation
+thingsctl add "Book flight to Denver" --when tomorrow --project "Denver Trip"
+
+# Agent completes a task the user mentioned
+thingsctl search "dentist" --json  # Find the task
+thingsctl complete 7Ae              # Complete it
+
+# Agent provides a daily briefing
+thingsctl today --json | jq -r '.[] | "- \(.title)"'
+
+# Agent checks upcoming deadlines
+thingsctl due --json | jq '.[] | select(.deadline <= "2024-03-15")'
+```
+
+### Agent prompt snippet
+
+```
+You have access to Things 3 via thingsctl. Use these commands:
+- `thingsctl today --json` — Get today's tasks
+- `thingsctl add "<title>" --when today` — Add a task
+- `thingsctl complete <id>` — Mark task done
+- `thingsctl search "<query>" --json` — Find tasks
+- `thingsctl due --json` — Check deadlines
+```
 
 ## How It Works
 
