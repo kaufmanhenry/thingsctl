@@ -194,7 +194,6 @@ class ThingsCLI {
       WHERE status = 0 
         AND trashed = 0 
         AND type = 0
-        AND start != 2
         AND (
           todayIndex > 0 
           OR (startDate >= 1000000000 AND startDate < ?)
@@ -207,17 +206,36 @@ class ThingsCLI {
     
     let tasks = stmt.all(bounds.end);
     
-    // Deduplicate tasks with same title + todayIndex (database sync issue)
-    // Things app handles this in UI, we need to replicate for CLI accuracy
-    const seen = new Map();
-    tasks = tasks.filter(task => {
-      const key = `${task.title}|${task.todayIndex || ''}`;
-      if (seen.has(key)) {
-        return false; // Skip duplicate
+    // Get all task titles that have an Anytime (start=1) version anywhere
+    const anytimeTasksStmt = this.db.prepare(`
+      SELECT DISTINCT title FROM TMTask
+      WHERE status = 0 AND trashed = 0 AND type = 0 AND start = 1
+    `);
+    const anytimeTitles = new Set(anytimeTasksStmt.all().map(t => t.title));
+    
+    // Deduplicate tasks with same title + todayIndex
+    // When duplicates exist with different start values, prefer start=1 (Anytime)
+    // Exclude Someday-only tasks (tasks that don't have ANY Anytime version)
+    const taskMap = new Map();
+    
+    for (const task of tasks) {
+      // Skip Someday tasks that have no Anytime version anywhere
+      if (task.start === 2 && !anytimeTitles.has(task.title)) {
+        continue;
       }
-      seen.set(key, true);
-      return true;
-    });
+      
+      const key = `${task.title}|${task.todayIndex || ''}`;
+      const existing = taskMap.get(key);
+      
+      if (!existing) {
+        taskMap.set(key, task);
+      } else if (task.start === 1 && existing.start === 2) {
+        // Prefer Anytime over Someday when both exist for same todayIndex
+        taskMap.set(key, task);
+      }
+    }
+    
+    tasks = Array.from(taskMap.values());
     
     tasks = this.applyFilters(tasks, options);
     return this.outputTasks(tasks, options);
