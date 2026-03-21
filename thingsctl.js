@@ -194,6 +194,7 @@ class ThingsCLI {
       WHERE status = 0 
         AND trashed = 0 
         AND type = 0
+        AND start != 2
         AND (
           todayIndex > 0 
           OR (startDate >= 1000000000 AND startDate < ?)
@@ -205,6 +206,19 @@ class ThingsCLI {
     `);
     
     let tasks = stmt.all(bounds.end);
+    
+    // Deduplicate tasks with same title + todayIndex (database sync issue)
+    // Things app handles this in UI, we need to replicate for CLI accuracy
+    const seen = new Map();
+    tasks = tasks.filter(task => {
+      const key = `${task.title}|${task.todayIndex || ''}`;
+      if (seen.has(key)) {
+        return false; // Skip duplicate
+      }
+      seen.set(key, true);
+      return true;
+    });
+    
     tasks = this.applyFilters(tasks, options);
     return this.outputTasks(tasks, options);
   }
