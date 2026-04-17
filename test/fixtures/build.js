@@ -12,10 +12,13 @@ const HERE = __dirname;
 const SCHEMA = fs.readFileSync(path.join(HERE, 'schema.sql'), 'utf8');
 const OUT = path.join(HERE, 'things.sqlite');
 
-// Frozen "now" for stable date-relative tests: 2026-04-15 12:00 local.
-const NOW_UNIX = Math.floor(new Date(2026, 3, 15, 12, 0, 0).getTime() / 1000);
+// "Now" rolls forward with wall-clock time so date-relative queries (today,
+// upcoming, overdue, evening) always see the seeded rows in the right state.
+// Tests must rebuild the fixture before each run — see package.json `test`.
+const _now = new Date();
+const NOW_UNIX = Math.floor(_now.getTime() / 1000);
 const COCOA = (u) => u - 978307200;
-const TODAY_START = Math.floor(new Date(2026, 3, 15, 0, 0, 0).getTime() / 1000);
+const TODAY_START = Math.floor(new Date(_now.getFullYear(), _now.getMonth(), _now.getDate()).getTime() / 1000);
 const TODAY_END = TODAY_START + 86400;
 
 function build() {

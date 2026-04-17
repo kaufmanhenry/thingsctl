@@ -15,9 +15,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "jest",
+    "test": "node test/fixtures/build.js && jest",
     "test:unit": "jest test/unit",
-    "test:integration": "jest test/integration",
+    "test:integration": "node test/fixtures/build.js && jest test/integration",
     "fixture": "node test/fixtures/build.js",
     "prepublishOnly": "npm test"
   },
