@@ -1,17 +1,29 @@
 {
   "name": "thingsctl",
-  "version": "1.0.0",
-  "description": "A command-line interface for Things 3 that actually matches the UI",
-  "main": "thingsctl.js",
+  "version": "2.0.0",
+  "description": "A full-featured command-line interface and MCP server for Things 3 on macOS.",
+  "main": "src/cli.js",
+  "type": "commonjs",
   "bin": {
-    "thingsctl": "./thingsctl.js"
+    "thingsctl": "./bin/thingsctl.js",
+    "thingsctl-mcp": "./bin/thingsctl-mcp.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "test": "node thingsctl.js today"
+    "test": "jest",
+    "test:unit": "jest test/unit",
+    "test:integration": "jest test/integration",
+    "fixture": "node test/fixtures/build.js",
+    "prepublishOnly": "npm test"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/henrykaufman/thingsctl.git"
+    "url": "git+https://github.com/kaufmanhenry/thingsctl.git"
   },
   "keywords": [
     "things",
@@ -19,19 +31,28 @@
     "gtd",
     "task-management",
     "cli",
+    "mcp",
     "macos",
-    "productivity"
+    "productivity",
+    "ai-agent"
   ],
   "author": "Henry Kaufman",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/henrykaufman/thingsctl/issues"
+    "url": "https://github.com/kaufmanhenry/thingsctl/issues"
   },
-  "homepage": "https://github.com/henrykaufman/thingsctl#readme",
+  "homepage": "https://github.com/kaufmanhenry/thingsctl#readme",
   "dependencies": {
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^11.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "os": [
+    "darwin"
+  ]
 }

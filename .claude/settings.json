@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(crontab -l)",
+      "Bash(crontab -l *)",
+      "Bash(gh secret list)"
+    ]
+  }
+}
