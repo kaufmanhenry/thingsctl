@@ -25,6 +25,7 @@ function _gather(database) {
       SELECT COUNT(*) as count FROM TMTask
       WHERE status=0 AND trashed=0 AND type=0 AND start=2 AND todayIndex<=0
         AND startDate IS NULL
+        AND rt1_recurrenceRule IS NULL
     `),
     upcoming: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0 AND startDate IS NOT NULL AND startDate >= ? AND todayIndex<=0`, tomorrow),
     evening: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0 AND startBucket=1 AND todayIndex<=0`),
