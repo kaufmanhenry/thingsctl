@@ -1,20 +1,21 @@
 'use strict';
 
 const db = require('../lib/db');
-const { todayBounds, unixToCocoa } = require('../lib/dates');
+const { todayBounds, encodeThingsDate, packedTomorrow } = require('../lib/dates');
 const { colors } = require('../lib/format');
 
 function _gather(database) {
   const bounds = todayBounds();
-  const cocoaTodayStart = unixToCocoa(bounds.start);
+  const today = encodeThingsDate();      // packed calendar date for startDate/deadline
+  const tomorrow = packedTomorrow();     // exclusive upper bound for "today or earlier"
   const q = (sql, ...p) => database.prepare(sql).get(...p).count;
 
   return {
     today: q(`
       SELECT COUNT(*) as count FROM TMTask
       WHERE status = 0 AND trashed = 0 AND type = 0
-        AND (todayIndex > 0 OR (startDate >= 1000000000 AND startDate < ?))
-    `, bounds.end),
+        AND start = 1 AND startDate IS NOT NULL AND startDate > 0 AND startDate < ?
+    `, tomorrow),
     inbox: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0 AND start=0`),
     anytime: q(`
       SELECT COUNT(*) as count FROM TMTask
@@ -23,13 +24,13 @@ function _gather(database) {
     someday: q(`
       SELECT COUNT(*) as count FROM TMTask
       WHERE status=0 AND trashed=0 AND type=0 AND start=2 AND todayIndex<=0
-        AND (startDate IS NULL OR startDate < 1000000000)
+        AND startDate IS NULL
     `),
-    upcoming: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0 AND startDate >= ?`, bounds.end),
+    upcoming: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0 AND startDate IS NOT NULL AND startDate >= ? AND todayIndex<=0`, tomorrow),
     evening: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0 AND startBucket=1 AND todayIndex<=0`),
-    overdue: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0 AND deadline > 1000000000 AND deadline < ?`, bounds.start),
+    overdue: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0 AND deadline IS NOT NULL AND deadline > 0 AND deadline < ?`, today),
     totalOpen: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=0`),
-    completedToday: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=3 AND trashed=0 AND type=0 AND stopDate >= ?`, cocoaTodayStart),
+    completedToday: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=3 AND trashed=0 AND type=0 AND stopDate >= ?`, bounds.start),
     projects: q(`SELECT COUNT(*) as count FROM TMTask WHERE status=0 AND trashed=0 AND type=1`),
   };
 }

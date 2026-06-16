@@ -4,7 +4,7 @@ const db = require('../lib/db');
 const queries = require('../lib/queries');
 const csv = require('../lib/csv');
 const { taskToJson } = require('../lib/format');
-const { formatShortDate } = require('../lib/dates');
+const { formatThingsShortDate, decodeThingsDate } = require('../lib/dates');
 const { STATUS } = require('../lib/constants');
 
 function _gather(database, source, opts) {
@@ -44,7 +44,7 @@ function _markdown(database, tasks, title) {
     let line = `- ${check} ${t.title}`;
     const tags = t.tagList ? t.tagList.split(',').filter(Boolean) : [];
     if (tags.length) line += ` #${tags.join(' #')}`;
-    const deadline = formatShortDate(t.deadline);
+    const deadline = formatThingsShortDate(t.deadline);
     if (deadline) line += ` 📅 ${deadline}`;
     lines.push(line);
     if (t.notes) {
@@ -64,8 +64,8 @@ function _csv(tasks) {
     const status = t.status === STATUS.COMPLETED ? 'completed'
       : t.status === STATUS.CANCELED ? 'canceled' : 'open';
     const tags = (t.tagList || '').split(',').filter(Boolean).join(';');
-    const deadline = t.deadline >= 1000000000
-      ? new Date(t.deadline * 1000).toISOString().split('T')[0] : '';
+    const dl = decodeThingsDate(t.deadline);
+    const deadline = dl ? dl.toISOString().split('T')[0] : '';
     rows.push([t.uuid, t.title, status, tags, t.projectName || '', t.areaName || '', deadline, t.notes || '']);
   }
   return csv.format(rows);

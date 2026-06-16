@@ -1,7 +1,7 @@
 'use strict';
 
 const db = require('../lib/db');
-const { cocoaToDate } = require('../lib/dates');
+const { unixToDate } = require('../lib/dates');
 
 // Polls TMTask.userModificationDate; emits NDJSON for each event detected.
 function run(opts = {}) {
@@ -30,7 +30,7 @@ function run(opts = {}) {
     for (const r of rows) {
       if (r.userModificationDate > lastSeen) lastSeen = r.userModificationDate;
       if (r.type !== 0) continue;
-      const at = cocoaToDate(r.userModificationDate)?.toISOString();
+      const at = unixToDate(r.userModificationDate)?.toISOString();
       if (wantAdditions && r.creationDate >= startedAt) {
         _emit({ event: 'added', uuid: r.uuid, title: r.title, at });
       }

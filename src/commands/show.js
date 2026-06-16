@@ -4,7 +4,7 @@ const db = require('../lib/db');
 const queries = require('../lib/queries');
 const { resolveTaskId } = require('../lib/uuid');
 const { colors, taskToJson } = require('../lib/format');
-const { formatShortDate } = require('../lib/dates');
+const { formatThingsShortDate } = require('../lib/dates');
 const { STATUS, START } = require('../lib/constants');
 
 function _details(database, task) {
@@ -24,9 +24,9 @@ function _details(database, task) {
   if (task.areaName) lines.push(`Area: ${task.areaName}`);
   const tags = task.tagList ? task.tagList.split(',').filter(Boolean) : [];
   if (tags.length) lines.push(`Tags: ${tags.join(', ')}`);
-  const scheduled = formatShortDate(task.startDate);
+  const scheduled = formatThingsShortDate(task.startDate);
   if (scheduled) lines.push(`Scheduled: ${scheduled}`);
-  const deadline = formatShortDate(task.deadline);
+  const deadline = formatThingsShortDate(task.deadline);
   if (deadline) lines.push(`Deadline: ${deadline}`);
   if (task.notes) {
     lines.push('');

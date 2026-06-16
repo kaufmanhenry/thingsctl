@@ -1,6 +1,6 @@
 'use strict';
 
-const { todayBounds } = require('./dates');
+const { encodeThingsDate, packedTomorrow } = require('./dates');
 
 // Canonical SQL for every list view.
 //
@@ -60,40 +60,23 @@ function _filterClauses({ tag, area, project }) {
 
 const BASE = `FROM TMTask t WHERE t.status = 0 AND t.trashed = 0 AND t.type = 0`;
 
-// TODAY: tasks in Today (todayIndex > 0) OR scheduled for today/past.
-// Dedupe duplicate titles and exclude Someday-only duplicates (Things creates
-// shadow rows when a task lives in multiple states).
+// TODAY: Anytime to-dos scheduled for today or earlier (overdue-scheduled roll
+// into Today, exactly as the Things app does). startDate is a packed calendar
+// date, so the window is (0, packedTomorrow). todayIndex is only a sort key here
+// (Today rows carry negative values); it is NOT a membership predicate — a
+// positive todayIndex marks recurrence-template rows that Things hides.
 function todayTasks(db, filters = {}) {
-  const bounds = todayBounds();
+  const tomorrow = packedTomorrow();
   const f = _filterClauses(filters);
   const sql = `
     SELECT ${SELECT_TASK_FIELDS}
     ${BASE}
-      AND (t.todayIndex > 0 OR (t.startDate >= 1000000000 AND t.startDate < ?))
+      AND t.start = 1
+      AND t.startDate IS NOT NULL AND t.startDate > 0 AND t.startDate < ?
       ${f.sql}
-    ORDER BY
-      CASE WHEN t.todayIndex > 0 THEN 0 ELSE 1 END,
-      t.todayIndex DESC,
-      t.startDate ASC
+    ORDER BY t.todayIndex ASC, t.startDate ASC
   `;
-  const rows = db.prepare(sql).all(bounds.end, ...f.params);
-
-  // Dedupe with the same logic as the original today() impl.
-  const anytimeTitles = new Set(
-    db.prepare(`SELECT DISTINCT title FROM TMTask WHERE status = 0 AND trashed = 0 AND type = 0 AND start = 1`)
-      .all()
-      .map((r) => r.title)
-  );
-
-  const map = new Map();
-  for (const t of rows) {
-    if (t.start === 2 && !anytimeTitles.has(t.title)) continue;
-    const key = `${t.title}|${t.todayIndex || ''}`;
-    const existing = map.get(key);
-    if (!existing) map.set(key, t);
-    else if (t.start === 1 && existing.start === 2) map.set(key, t);
-  }
-  return [...map.values()];
+  return db.prepare(sql).all(tomorrow, ...f.params);
 }
 
 function inboxTasks(db, filters = {}) {
@@ -119,39 +102,39 @@ function somedayTasks(db, filters = {}) {
   return db.prepare(`
     SELECT ${SELECT_TASK_FIELDS}
     ${BASE} AND t.start = 2 AND t.todayIndex <= 0
-      AND (t.startDate IS NULL OR t.startDate < 1000000000)
+      AND t.startDate IS NULL
       ${f.sql}
     ORDER BY t."index" ASC
   `).all(...f.params);
 }
 
 function upcomingTasks(db, filters = {}) {
-  const bounds = todayBounds();
+  const tomorrow = packedTomorrow();
   const f = _filterClauses(filters);
   return db.prepare(`
     SELECT ${SELECT_TASK_FIELDS}
-    ${BASE} AND t.startDate >= ? ${f.sql}
+    ${BASE} AND t.startDate IS NOT NULL AND t.startDate >= ? AND t.todayIndex <= 0 ${f.sql}
     ORDER BY t.startDate ASC
-  `).all(bounds.end, ...f.params);
+  `).all(tomorrow, ...f.params);
 }
 
 function dueTasks(db, filters = {}) {
   const f = _filterClauses(filters);
   return db.prepare(`
     SELECT ${SELECT_TASK_FIELDS}
-    ${BASE} AND t.deadline > 1000000000 ${f.sql}
+    ${BASE} AND t.deadline IS NOT NULL AND t.deadline > 0 ${f.sql}
     ORDER BY t.deadline ASC
   `).all(...f.params);
 }
 
 function overdueTasks(db, filters = {}) {
-  const bounds = todayBounds();
+  const today = encodeThingsDate();
   const f = _filterClauses(filters);
   return db.prepare(`
     SELECT ${SELECT_TASK_FIELDS}
-    ${BASE} AND t.deadline > 1000000000 AND t.deadline < ? ${f.sql}
+    ${BASE} AND t.deadline IS NOT NULL AND t.deadline > 0 AND t.deadline < ? ${f.sql}
     ORDER BY t.deadline ASC
-  `).all(bounds.start, ...f.params);
+  `).all(today, ...f.params);
 }
 
 function eveningTasks(db, filters = {}) {
@@ -172,14 +155,14 @@ function repeatingTasks(db, filters = {}) {
   `).all(...f.params);
 }
 
-function logbookTasks(db, { limit = 20, sinceCocoa } = {}) {
-  if (sinceCocoa != null) {
+function logbookTasks(db, { limit = 20, sinceUnix } = {}) {
+  if (sinceUnix != null) {
     return db.prepare(`
       SELECT ${SELECT_TASK_FIELDS}
       FROM TMTask t WHERE t.status = 3 AND t.trashed = 0 AND t.type = 0
         AND t.stopDate >= ?
       ORDER BY t.stopDate DESC
-    `).all(sinceCocoa);
+    `).all(sinceUnix);
   }
   return db.prepare(`
     SELECT ${SELECT_TASK_FIELDS}

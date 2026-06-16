@@ -3,11 +3,11 @@
 const db = require('../lib/db');
 const queries = require('../lib/queries');
 const { colors, taskToJson } = require('../lib/format');
-const { cocoaToDate, daysAgoUnix, unixToCocoa } = require('../lib/dates');
+const { unixToDate, daysAgoUnix } = require('../lib/dates');
 
 function _line(t) {
   let line = `✓ ${t.title}`;
-  const d = cocoaToDate(t.stopDate);
+  const d = unixToDate(t.stopDate);
   if (d) {
     const s = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     line += ` ${colors.dim('(' + s + ')')}`;
@@ -16,17 +16,17 @@ function _line(t) {
 }
 
 function run(opts = {}) {
-  let sinceCocoa;
+  let sinceUnix;
   if (opts.since != null) {
     const days = parseInt(opts.since, 10);
-    if (!Number.isNaN(days)) sinceCocoa = unixToCocoa(daysAgoUnix(days));
+    if (!Number.isNaN(days)) sinceUnix = daysAgoUnix(days);
   }
   const limit = opts.limit ? parseInt(opts.limit, 10) : 20;
-  const tasks = queries.logbookTasks(db.open(), { limit, sinceCocoa });
+  const tasks = queries.logbookTasks(db.open(), { limit, sinceUnix });
   if (opts.json) {
     return tasks.map((t) => ({
       ...taskToJson(t),
-      completedAt: cocoaToDate(t.stopDate)?.toISOString() ?? null,
+      completedAt: unixToDate(t.stopDate)?.toISOString() ?? null,
     }));
   }
   if (opts.ids) return tasks.map((t) => t.uuid);

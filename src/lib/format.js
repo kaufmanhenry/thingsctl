@@ -1,7 +1,7 @@
 'use strict';
 
 const { STATUS, START } = require('./constants');
-const { formatShortDate } = require('./dates');
+const { formatThingsShortDate, thingsDateToIso, encodeThingsDate, packedTomorrow } = require('./dates');
 
 // TTY-aware coloring. Disabled if NO_COLOR is set or stdout is not a TTY.
 const _colorEnabled = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -51,17 +51,14 @@ function formatTask(task, opts = {}) {
     else if (task.areaName) line += ` ${colors.dim('[' + task.areaName + ']')}`;
   }
 
-  const deadline = formatShortDate(task.deadline);
+  const deadline = formatThingsShortDate(task.deadline);
   if (deadline) line += ` ${colors.yellow('📅 ' + deadline)}`;
 
-  if (showScheduled) {
-    const scheduled = formatShortDate(task.startDate);
-    if (scheduled && task.startDate >= 1000000000) {
-      // Only show the arrow when the scheduled date is in the future.
-      const todayEnd = new Date(new Date().setHours(24, 0, 0, 0)).getTime() / 1000;
-      if (task.startDate >= todayEnd) {
-        line += ` ${colors.blue('→ ' + scheduled)}`;
-      }
+  if (showScheduled && task.startDate) {
+    const scheduled = formatThingsShortDate(task.startDate);
+    // Only show the arrow when the scheduled date is in the future.
+    if (scheduled && task.startDate > encodeThingsDate()) {
+      line += ` ${colors.blue('→ ' + scheduled)}`;
     }
   }
 
@@ -70,7 +67,6 @@ function formatTask(task, opts = {}) {
 
 // Render a task as a plain JSON-ready object.
 function taskToJson(task) {
-  const { unixToDate } = require('./dates');
   return {
     uuid: task.uuid,
     title: task.title,
@@ -81,12 +77,12 @@ function taskToJson(task) {
         : task.status === STATUS.CANCELED
         ? 'canceled'
         : 'open',
-    startDate: task.startDate >= 1000000000 ? unixToDate(task.startDate).toISOString() : null,
-    deadline: task.deadline >= 1000000000 ? unixToDate(task.deadline).toISOString() : null,
+    startDate: thingsDateToIso(task.startDate),
+    deadline: thingsDateToIso(task.deadline),
     tags: task.tagList ? task.tagList.split(',').filter(Boolean).sort() : (task._tags || []),
     project: task.projectName || null,
     area: task.areaName || null,
-    inToday: task.todayIndex > 0,
+    inToday: task.start === START.ANYTIME && task.startDate != null && task.startDate > 0 && task.startDate < packedTomorrow(),
     list: listName(task.start),
     evening: task.startBucket === 1,
   };

@@ -4,7 +4,7 @@ require('./setup');
 const today = require('../../src/commands/today');
 
 describe('today', () => {
-  test('returns 2 today tasks (todayIndex>0 and scheduled-for-today)', () => {
+  test('returns tasks scheduled for today or earlier', () => {
     const out = today.run({ json: true });
     const titles = out.map((t) => t.title).sort();
     expect(titles).toEqual(['Ship the demo', 'Standup']);
@@ -13,6 +13,11 @@ describe('today', () => {
   test('excludes Someday-only tasks', () => {
     const out = today.run({ json: true });
     expect(out.find((t) => t.title === 'Learn Mandarin')).toBeUndefined();
+  });
+
+  test('excludes recurrence templates (positive todayIndex is not a membership flag)', () => {
+    const out = today.run({ json: true });
+    expect(out.find((t) => t.title === 'Weekly review template')).toBeUndefined();
   });
 
   test('--tag Deep filters to one task', () => {

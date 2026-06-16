@@ -53,7 +53,7 @@ describe('list commands against fixture', () => {
 
   test('repeating lists tasks with rt1_recurrenceRule', () => {
     const out = repeating.run({ json: true });
-    expect(out.map((t) => t.title)).toEqual(['Standup recurring']);
+    expect(out.map((t) => t.title).sort()).toEqual(['Standup recurring', 'Weekly review template']);
   });
 
   test('projects includes the seeded project with task count', () => {
