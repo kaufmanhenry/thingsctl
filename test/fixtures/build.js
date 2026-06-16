@@ -34,6 +34,24 @@ const PACK_DAYS = (offset) => {
 };
 const PACKED_TODAY = PACK(TODAY_MIDNIGHT);
 
+// Real Things recurrence rule: an XML plist with fu (NSCalendarUnit: 4=year,
+// 8=month, 16=day, 256=weekday), fa (interval), and an `of` array carrying a
+// weekday (wd) or day-of-month (dy). Mirrors what current Things 3 writes.
+const RRULE = ({ fu, fa = 1, wd, dy }) => {
+  const of =
+    wd != null ? `<dict><key>wd</key><integer>${wd}</integer></dict>`
+    : dy != null ? `<dict><key>dy</key><integer>${dy}</integer></dict>`
+    : '';
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>` +
+    `<key>fa</key><integer>${fa}</integer>` +
+    `<key>fu</key><integer>${fu}</integer>` +
+    `<key>of</key><array>${of}</array>` +
+    `<key>tp</key><integer>1</integer>` +
+    `</dict></plist>`;
+  return Buffer.from(xml, 'utf8');
+};
+
 function build() {
   if (fs.existsSync(OUT)) fs.unlinkSync(OUT);
   const db = new Database(OUT);
@@ -90,7 +108,16 @@ function build() {
   insertTask.run(
     't-template-1', 0, 0, 'Weekly review template', null, 2, null, 0, null, 1, 900, 'a-work', null, null,
     NOW_UNIX - 86400 * 60, NOW_UNIX - 86400 * 30, null, 0, 0,
-    Buffer.from('frequency\x00\x01interval\x00\x01'), PACK_DAYS(7)
+    RRULE({ fu: 256, fa: 1, wd: 2 }), PACK_DAYS(7)
+  );
+
+  // Recurrence template in Someday with todayIndex=0 — exactly how the real DB
+  // stores a repeating to-do. Regression guard for the "templates leak into
+  // Someday" bug: it must be excluded from `someday` but listed by `repeating`.
+  insertTask.run(
+    't-template-someday', 0, 0, 'Biweekly 1:1 recurring', null, 2, null, 0, null, 2, 0, 'a-work', null, null,
+    NOW_UNIX - 86400 * 60, NOW_UNIX - 86400 * 30, null, 0, 0,
+    RRULE({ fu: 256, fa: 2, wd: 4 }), PACK_DAYS(3)
   );
 
   // Inbox task
@@ -137,11 +164,12 @@ function build() {
     NOW_UNIX - 86400, NOW_UNIX - 3600, null, 0, 0, null, 0
   );
 
-  // Repeating task with a stub recurrence rule blob
+  // Repeating task (daily) — anchored in Anytime, with a real recurrence rule
+  // and a packed next-instance date.
   insertTask.run(
     't-repeat-1', 0, 0, 'Standup recurring', null, 1, null, 0, null, 1, 0, 'a-work', null, null,
     NOW_UNIX - 86400 * 30, NOW_UNIX - 86400, null, 0, 0,
-    Buffer.from('frequency\x00\x01interval\x00\x01'), PACK_DAYS(1)
+    RRULE({ fu: 16, fa: 1 }), PACK_DAYS(1)
   );
 
   // Completed task (logbook) — stopDate is Unix seconds

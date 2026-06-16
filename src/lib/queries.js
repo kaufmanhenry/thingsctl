@@ -99,10 +99,15 @@ function anytimeTasks(db, filters = {}) {
 
 function somedayTasks(db, filters = {}) {
   const f = _filterClauses(filters);
+  // Repeating-task templates are stored with start=2 (the same value as
+  // Someday) but Things hides them from the Someday list — only their
+  // generated instances show (in Today/Upcoming). Exclude any row that carries
+  // a recurrence rule so templates don't masquerade as Someday tasks.
   return db.prepare(`
     SELECT ${SELECT_TASK_FIELDS}
     ${BASE} AND t.start = 2 AND t.todayIndex <= 0
       AND t.startDate IS NULL
+      AND t.rt1_recurrenceRule IS NULL
       ${f.sql}
     ORDER BY t."index" ASC
   `).all(...f.params);
