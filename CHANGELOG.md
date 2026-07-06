@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.4
+
+Fix `update` silently no-opping on projects. Things applies the `update`
+command to to-dos only; a project needs the separate `update-project` command,
+so renaming or editing a project reported success but changed nothing.
+
+- **Project updates now route to `update-project`.** `update` (and the
+  `things_update` MCP tool) reads the resolved entity type and, when it is a
+  project (`TMTask.type === 1`), issues `things:///update-project` instead of
+  `things:///update`. A new `buildUpdateProjectUrl` builder backs this.
+
+Unit test added for the new endpoint builder.
+
 ## 2.0.3
 
 Fix recurring tasks across `someday` and `repeating`. Two bugs, both from the same

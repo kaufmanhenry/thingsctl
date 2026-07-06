@@ -3,7 +3,7 @@
 const db = require('../lib/db');
 const queries = require('../lib/queries');
 const { resolveTaskId } = require('../lib/uuid');
-const { buildUpdateUrl } = require('../lib/url');
+const { buildUpdateUrl, buildUpdateProjectUrl } = require('../lib/url');
 const { openUrl } = require('../lib/exec');
 const { getToken } = require('../lib/token');
 const { colors } = require('../lib/format');
@@ -41,8 +41,11 @@ function run(id, opts = {}) {
 
   if (changes.length === 0) throw new Error('No changes specified');
 
-  openUrl(buildUpdateUrl(params));
-  return `${colors.green('✓')} Updated "${task.title}": ${changes.join(', ')}`;
+  // type 1 = project; Things ignores `update` on projects, so route to `update-project`.
+  const isProject = ref.type === 1;
+  openUrl(isProject ? buildUpdateProjectUrl(params) : buildUpdateUrl(params));
+  const label = isProject ? 'project ' : '';
+  return `${colors.green('✓')} Updated ${label}"${task.title}": ${changes.join(', ')}`;
 }
 
 module.exports = {

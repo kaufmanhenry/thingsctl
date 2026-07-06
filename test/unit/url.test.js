@@ -46,6 +46,13 @@ describe('buildUpdateUrl', () => {
   });
 });
 
+describe('buildUpdateProjectUrl', () => {
+  test('targets the update-project endpoint', () => {
+    const u = url.buildUpdateProjectUrl({ id: 'proj1', title: 'New Name' });
+    expect(u).toBe('things:///update-project?id=proj1&title=New%20Name');
+  });
+});
+
 describe('buildJsonUrl', () => {
   test('encodes nested data as JSON', () => {
     const u = url.buildJsonUrl({

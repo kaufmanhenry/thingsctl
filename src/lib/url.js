@@ -26,6 +26,11 @@ function buildUpdateUrl(params) {
   return `things:///update?${_encode(params)}`;
 }
 
+// Things applies `update` to to-dos only; projects need `update-project`.
+function buildUpdateProjectUrl(params) {
+  return `things:///update-project?${_encode(params)}`;
+}
+
 function buildShowUrl(params) {
   return `things:///show?${_encode(params)}`;
 }
@@ -46,6 +51,7 @@ function buildJsonUrl({ data, authToken, reveal }) {
 module.exports = {
   buildAddUrl,
   buildUpdateUrl,
+  buildUpdateProjectUrl,
   buildShowUrl,
   buildAddProjectUrl,
   buildJsonUrl,
