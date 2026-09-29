@@ -2,11 +2,12 @@
 
 const db = require('../lib/db');
 const { resolveMany } = require('../lib/uuid');
-const { buildUpdateUrl } = require('../lib/url');
+const { buildUpdateUrl, buildUpdateProjectUrl } = require('../lib/url');
 const { openUrl } = require('../lib/exec');
 const { getToken } = require('../lib/token');
 const { colors } = require('../lib/format');
-const { STATUS } = require('../lib/constants');
+const { STATUS, TYPE } = require('../lib/constants');
+const { waitForWrite } = require('../lib/verify');
 const queries = require('../lib/queries');
 
 function run(ids, opts = {}) {
@@ -25,12 +26,32 @@ function run(ids, opts = {}) {
       out.push(`${colors.dim('Already completed: ' + full.title)}`);
       continue;
     }
+    if (task.type === TYPE.HEADING) {
+      out.push(`${colors.red('✗')} Cannot complete a heading: ${task.title}`);
+      continue;
+    }
+
+    // Projects are only reachable through `update-project`. Sending them to
+    // `update` is a silent no-op — the bug this dispatch exists to prevent.
+    const isProject = task.type === TYPE.PROJECT;
+    const params = { id: task.uuid, completed: 'true', 'auth-token': getToken() };
+    const url = isProject ? buildUpdateProjectUrl(params) : buildUpdateUrl(params);
+    const label = isProject ? 'project' : 'task';
+
     try {
-      openUrl(buildUpdateUrl({ id: task.uuid, completed: 'true', 'auth-token': getToken() }));
-      out.push(`${colors.green('✓')} Completed: ${task.title}`);
+      openUrl(url);
     } catch (e) {
       out.push(`${colors.red('✗')} Failed: ${task.title} (${e.message})`);
+      continue;
     }
+
+    const { ok } = waitForWrite(task.uuid, (r) => r.status === STATUS.COMPLETED);
+    out.push(
+      ok
+        ? `${colors.green('✓')} Completed ${label}: ${task.title}`
+        : `${colors.red('✗')} Things did not complete the ${label} "${task.title}" ` +
+          `(the URL was accepted but the database never changed)`
+    );
   }
   return list.length === 1 ? out[0] : out;
 }
@@ -39,7 +60,7 @@ module.exports = {
   run,
   mcp: {
     name: 'things_complete',
-    description: 'Mark one or more tasks as complete.',
+    description: 'Mark one or more tasks or projects as complete. Verified against the database before reporting success.',
     inputSchema: {
       type: 'object',
       properties: {

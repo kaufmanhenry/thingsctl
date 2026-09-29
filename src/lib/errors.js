@@ -37,6 +37,21 @@ class ThingsUrlError extends ThingsCtlError {
   }
 }
 
+// Raised when a URL-scheme write was dispatched but the database never showed
+// the change. Usually means Things rejected the command outright.
+class WriteNotAppliedError extends ThingsCtlError {
+  constructor(title, detail) {
+    super(
+      `Things did not apply the change to "${title}".` +
+        (detail ? ` ${detail}` : '') +
+        '\n  The command was accepted by macOS but Things made no change.' +
+        '\n  Check that Things 3 is running and that the auth token is valid.',
+      'E_WRITE_NOT_APPLIED'
+    );
+    this.title = title;
+  }
+}
+
 class TokenMissingError extends ThingsCtlError {
   constructor() {
     super(
@@ -54,5 +69,6 @@ module.exports = {
   TaskNotFoundError,
   AmbiguousIdError,
   ThingsUrlError,
+  WriteNotAppliedError,
   TokenMissingError,
 };

@@ -26,6 +26,13 @@ function buildUpdateUrl(params) {
   return `things:///update?${_encode(params)}`;
 }
 
+// Projects MUST use `update-project`. Things silently ignores an `update`
+// aimed at a project uuid — and `open` still exits 0 — so using the wrong
+// builder produces a write that never happens and never reports an error.
+function buildUpdateProjectUrl(params) {
+  return `things:///update-project?${_encode(params)}`;
+}
+
 function buildShowUrl(params) {
   return `things:///show?${_encode(params)}`;
 }
@@ -46,6 +53,7 @@ function buildJsonUrl({ data, authToken, reveal }) {
 module.exports = {
   buildAddUrl,
   buildUpdateUrl,
+  buildUpdateProjectUrl,
   buildShowUrl,
   buildAddProjectUrl,
   buildJsonUrl,

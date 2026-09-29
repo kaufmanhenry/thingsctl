@@ -97,6 +97,7 @@ function dispatch(parsed) {
         title: o.title, notes: o.notes,
         'append-notes': o['append-notes'], 'prepend-notes': o['prepend-notes'],
         when: o.when, deadline: o.deadline, 'add-tags': o['add-tags'],
+        list: o.list, 'list-id': o['list-id'], area: o.area, 'area-id': o['area-id'],
         completed: o.completed, canceled: o.canceled,
         'yes-first': opts['yes-first'],
       });

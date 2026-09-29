@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.1.0
+
+Writes could silently do nothing and still report success. Fixed, plus the
+missing ability to move a to-do or project to a different parent.
+
+- **Every write on a PROJECT was a no-op that reported success.** `complete`,
+  `update` and `move` all built `things:///update`, which Things only applies to
+  to-dos; it ignores a project uuid without error. `open` still exits 0, so the
+  CLI printed `✓ Completed: <project>` while nothing changed. Projects now route
+  to `things:///update-project`, which is the endpoint Things documents for them.
+- **Success is now verified against the database, not assumed.** `open` exiting 0
+  only means macOS handed the URL to Things — it says nothing about whether Things
+  accepted it. Writes now poll the database (up to 3s) until the change is visible
+  and report a clear failure if it never lands. This is what turned the bug above
+  from an error into a lie.
+- **Added: move a to-do or project to a different parent.** Previously impossible
+  through the tool — `update` had no parameter for it and `move` only reschedules
+  despite the name. Now `update --list` / `--list-id` moves a to-do into a project
+  or area, and `update --area` / `--area-id` moves a project into an area. Passing
+  the wrong pair for the type (e.g. `--list` on a project) is refused with an
+  explanatory error rather than dropped silently by Things.
+- **`complete` refuses headings** instead of dispatching a URL that does nothing.
+- **`things_move`'s description now says it only reschedules**, and points at
+  `things_update` for re-parenting. The old wording ("moving it to...") read as a
+  re-parent and misled callers.
+
+New: `src/lib/verify.js` (post-write confirmation), `url.buildUpdateProjectUrl`,
+`db.openFresh`, `WriteNotAppliedError`. 20 regression tests added, including one
+that pins each write command to the correct endpoint per task type.
+
 ## 2.0.3
 
 Fix recurring tasks across `someday` and `repeating`. Two bugs, both from the same
