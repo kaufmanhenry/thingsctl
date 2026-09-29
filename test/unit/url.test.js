@@ -62,6 +62,11 @@ describe('buildJsonUrl', () => {
 });
 
 describe('buildUpdateProjectUrl', () => {
+  test('targets the update-project endpoint', () => {
+    const u = url.buildUpdateProjectUrl({ id: 'proj1', title: 'New Name' });
+    expect(u).toBe('things:///update-project?id=proj1&title=New%20Name');
+  });
+
   test('targets the update-project endpoint, not update', () => {
     const u = url.buildUpdateProjectUrl({ id: 'abc123', completed: 'true' });
     expect(u).toBe('things:///update-project?id=abc123&completed=true');

@@ -5,11 +5,12 @@
 Writes could silently do nothing and still report success. Fixed, plus the
 missing ability to move a to-do or project to a different parent.
 
-- **Every write on a PROJECT was a no-op that reported success.** `complete`,
-  `update` and `move` all built `things:///update`, which Things only applies to
-  to-dos; it ignores a project uuid without error. `open` still exits 0, so the
-  CLI printed `✓ Completed: <project>` while nothing changed. Projects now route
-  to `things:///update-project`, which is the endpoint Things documents for them.
+- **`complete` and `move` still no-opped on projects.** 2.0.4 routed `update`
+  to `things:///update-project` but left `complete` and `move` building
+  `things:///update`, which Things ignores for a project uuid. `open` still
+  exits 0, so `thingsctl complete <project>` printed `✓ Completed: <project>`
+  while the row stayed `status = 0`. Both now route by entity type, finishing
+  the fix 2.0.4 started.
 - **Success is now verified against the database, not assumed.** `open` exiting 0
   only means macOS handed the URL to Things — it says nothing about whether Things
   accepted it. Writes now poll the database (up to 3s) until the change is visible
@@ -29,6 +30,18 @@ missing ability to move a to-do or project to a different parent.
 New: `src/lib/verify.js` (post-write confirmation), `url.buildUpdateProjectUrl`,
 `db.openFresh`, `WriteNotAppliedError`. 20 regression tests added, including one
 that pins each write command to the correct endpoint per task type.
+## 2.0.4
+
+Fix `update` silently no-opping on projects. Things applies the `update`
+command to to-dos only; a project needs the separate `update-project` command,
+so renaming or editing a project reported success but changed nothing.
+
+- **Project updates now route to `update-project`.** `update` (and the
+  `things_update` MCP tool) reads the resolved entity type and, when it is a
+  project (`TMTask.type === 1`), issues `things:///update-project` instead of
+  `things:///update`. A new `buildUpdateProjectUrl` builder backs this.
+
+Unit test added for the new endpoint builder.
 
 ## 2.0.3
 
