@@ -160,6 +160,29 @@ npm test              # Jest unit + integration
 node bin/thingsctl.js today
 ```
 
+### Releasing
+
+Releases publish from CI via npm [trusted publishing](https://docs.npmjs.com/trusted-publishers)
+(OIDC). There is no npm token stored anywhere — npm trusts
+`.github/workflows/publish.yml` in this repo specifically, and each publish uses a
+short-lived credential. Provenance is attached automatically.
+
+```bash
+npm version <patch|minor|major> --no-git-tag-version
+# update CHANGELOG.md, commit, merge to main, then:
+git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z
+```
+
+Pushing the tag is the release. The workflow refuses to publish if the tag and
+`package.json` version disagree.
+
+Two things that will break publishing if you change them:
+
+- **Renaming `publish.yml`.** npm pins the workflow *filename*; a rename fails with
+  `ENEEDAUTH` until the trusted publisher is reconfigured on npmjs.com.
+- **Changing `repository.url` in `package.json`.** It must match this GitHub repo
+  exactly, or npm rejects the OIDC publish.
+
 ## License
 
 MIT
