@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.1
+
+No code changes. This is the first release published from CI through npm
+trusted publishing (OIDC) rather than from a laptop with a long-lived token,
+and so the first one carrying a provenance attestation — a cryptographic record
+of which workflow, commit and repository built the tarball, which anyone can
+verify with `npm audit signatures`.
+
+Cutting it deliberately rather than waiting for the next code change: the
+pipeline had never actually run, and the failure mode of finding that out later
+is the one that already lost 2.0.4 (merged, never published).
+
 ## 2.1.0
 
 Writes could report success for changes that never happened. 2.0.4 fixed one
