@@ -94,8 +94,12 @@ ${colors.bold('Options:')}
   --when <date>             Reschedule
   --deadline <date>         Set deadline
   --add-tags <list>         Add tags
-  --completed               Mark complete
-  --canceled                Mark canceled
+  --completed [true|false]  Mark complete, or reopen with --completed false
+  --canceled [true|false]   Mark canceled, or reopen with --canceled false
+  --list <title>            TO-DOS: move into this project or area
+  --list-id <uuid>          TO-DOS: move into this project or area (wins over --list)
+  --area <title>            PROJECTS: move into this area
+  --area-id <uuid>          PROJECTS: move into this area (wins over --area)
 `,
   complete: `
 ${colors.bold('thingsctl complete')} - Mark task(s) complete

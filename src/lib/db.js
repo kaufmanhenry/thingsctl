@@ -29,6 +29,7 @@ function close() {
   if (_db) {
     try { _db.close(); } catch (_) {}
     _db = null;
+    _isTestDb = false;
   }
 }
 

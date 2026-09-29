@@ -56,3 +56,37 @@ describe('modifiedSince', () => {
     expect(pred({ userModificationDate: 7 })).toBe(true);
   });
 });
+
+describe('fieldEquals', () => {
+  test('asserts an exact column value', () => {
+    const pred = verify.fieldEquals('project', 'p-001');
+    expect(pred({ project: 'p-001' })).toBe(true);
+    expect(pred({ project: null })).toBe(false);
+  });
+});
+
+describe('notApplied', () => {
+  test('is the one failure message every write command shares', () => {
+    const msg = verify.notApplied('complete', 'Ship the demo');
+    expect(msg).toContain('Things did not complete "Ship the demo"');
+    expect(msg).toContain('the URL was accepted but the database never changed');
+  });
+});
+
+describe('timeout is overridable', () => {
+  const real = process.env.THINGSCTL_VERIFY_TIMEOUT_MS;
+  afterEach(() => {
+    if (real === undefined) delete process.env.THINGSCTL_VERIFY_TIMEOUT_MS;
+    else process.env.THINGSCTL_VERIFY_TIMEOUT_MS = real;
+    jest.resetModules();
+  });
+
+  test('THINGSCTL_VERIFY_TIMEOUT_MS sets the default', () => {
+    // Things can take longer than 3s when the url cold-launches the app, which
+    // otherwise reads as a false "did not apply" on a write that does land.
+    jest.resetModules();
+    process.env.THINGSCTL_VERIFY_TIMEOUT_MS = '750';
+    const fresh = require('../../src/lib/verify');
+    expect(fresh.DEFAULT_TIMEOUT_MS).toBe(750);
+  });
+});

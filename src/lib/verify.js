@@ -1,6 +1,7 @@
 'use strict';
 
 const db = require('./db');
+const { colors } = require('./format');
 
 // Why this module exists.
 //
@@ -13,28 +14,52 @@ const db = require('./db');
 //
 // So: a write is not confirmed until the database says it landed.
 
-const DEFAULT_TIMEOUT_MS = 3000;
-const DEFAULT_INTERVAL_MS = 100;
+// Overridable because one number has to cover two very different situations.
+// Things already running applies a write well inside 500ms. A `things:///` URL
+// that cold-launches the app can take longer than 3s, and that shows up as a
+// false "did not apply" on a write that does eventually land.
+const DEFAULT_TIMEOUT_MS = Number(process.env.THINGSCTL_VERIFY_TIMEOUT_MS) || 3000;
 
-const VERIFY_FIELDS = `
-  uuid, title, type, status, project, area, heading,
-  start, startBucket, startDate, deadline, notes, userModificationDate
-`;
+// The first read almost always misses: `open` returns as soon as LaunchServices
+// hands over the URL, well before Things has committed anything. Start tight and
+// back off, so the common case pays ~20ms rather than a flat 100ms.
+const BACKOFF_MS = [20, 40, 80];
+const STEADY_INTERVAL_MS = 100;
+
+// Only columns a predicate actually reads. Keep this tight: it is the surface
+// that can rot, and it runs on every write on a user's machine.
+const VERIFY_FIELDS =
+  'uuid, status, project, area, start, startBucket, startDate, userModificationDate';
 
 // Synchronous sleep. The CLI is synchronous end to end (better-sqlite3,
-// execFileSync), so this keeps the control flow flat rather than turning every
-// command into a promise chain.
+// execFileSync), so this keeps the control flow flat.
+//
+// NOTE: this blocks the Node main thread. Harmless for the one-shot CLI; in the
+// long-lived MCP server it freezes the event loop for the duration of the wait,
+// which is why bin/thingsctl-mcp.js sets a shorter default timeout. Making the
+// whole write path async is the real fix and is deliberately not done here.
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-function readRow(uuid) {
+// One short-lived connection per wait, not one per poll. The database is in WAL
+// mode and a readonly connection in autocommit opens a fresh read transaction
+// per statement, so a single connection already sees another process's commits
+// between polls — reopening bought nothing and cost ~1.2ms each time.
+function _withConnection(fn) {
   const conn = db.openFresh();
   try {
-    return conn.prepare(`SELECT ${VERIFY_FIELDS} FROM TMTask WHERE uuid = ?`).get(uuid);
+    return fn(conn);
   } finally {
-    try { conn.close(); } catch (_) { /* nothing useful to do */ }
+    try { conn.close(); } catch (_) { /* handle dies with the process anyway */ }
   }
+}
+
+// Read a row once. Also the "before" snapshot for change-based predicates.
+function snapshot(uuid) {
+  return _withConnection((conn) =>
+    conn.prepare(`SELECT ${VERIFY_FIELDS} FROM TMTask WHERE uuid = ?`).get(uuid)
+  );
 }
 
 // Poll until `predicate(row)` holds or we run out of patience.
@@ -42,36 +67,52 @@ function readRow(uuid) {
 // loudly to complain.
 function waitForWrite(uuid, predicate, opts = {}) {
   const timeoutMs = opts.timeoutMs == null ? DEFAULT_TIMEOUT_MS : opts.timeoutMs;
-  const intervalMs = opts.intervalMs == null ? DEFAULT_INTERVAL_MS : opts.intervalMs;
   const deadline = Date.now() + timeoutMs;
 
-  for (;;) {
-    const row = readRow(uuid);
-    if (row && predicate(row)) return { ok: true, row };
-    if (Date.now() >= deadline) return { ok: false, row };
-    sleepSync(intervalMs);
-  }
-}
-
-// Snapshot the fields a command is about to change, so the predicate can ask
-// "did anything actually move?" rather than guessing at final values.
-function snapshot(uuid) {
-  return readRow(uuid);
+  return _withConnection((conn) => {
+    const stmt = conn.prepare(`SELECT ${VERIFY_FIELDS} FROM TMTask WHERE uuid = ?`);
+    for (let attempt = 0; ; attempt++) {
+      const row = stmt.get(uuid);
+      if (row && predicate(row)) return { ok: true, row };
+      if (Date.now() >= deadline) return { ok: false, row };
+      sleepSync(BACKOFF_MS[attempt] == null ? STEADY_INTERVAL_MS : BACKOFF_MS[attempt]);
+    }
+  });
 }
 
 // The general-purpose predicate: Things bumps userModificationDate on any real
-// edit. Use a field-specific predicate where one exists (status, project) —
-// this is the fallback for edits whose end state we can't cheaply assert.
+// edit. Prefer a field-specific predicate where one exists — this one cannot
+// tell our write apart from a Things Cloud sync or a concurrent edit in the UI,
+// and it cannot see a write that changed nothing.
+//
+// A missing baseline (the row could not be read before the write) makes this
+// vacuously true on the first read, which degrades to the old assume-success
+// behaviour. Callers that care should pass a field-specific predicate.
 function modifiedSince(before) {
   const was = before ? before.userModificationDate : null;
   return (row) => row.userModificationDate !== was;
+}
+
+// Assert a column holds an expected value — the strong form, used where we know
+// the end state (a re-parent target, a status change).
+function fieldEquals(field, expected) {
+  return (row) => row[field] === expected;
+}
+
+// One failure message, not one per command. Every write command reports the
+// same thing: macOS took the URL, Things did nothing with it.
+function notApplied(verb, title) {
+  return (
+    `${colors.red('✗')} Things did not ${verb} "${title}" ` +
+    '(the URL was accepted but the database never changed)'
+  );
 }
 
 module.exports = {
   waitForWrite,
   snapshot,
   modifiedSince,
-  readRow,
-  sleepSync,
+  fieldEquals,
+  notApplied,
   DEFAULT_TIMEOUT_MS,
 };

@@ -7,7 +7,7 @@ const { openUrl } = require('../lib/exec');
 const { getToken } = require('../lib/token');
 const { colors } = require('../lib/format');
 const { TYPE } = require('../lib/constants');
-const { waitForWrite, snapshot, modifiedSince } = require('../lib/verify');
+const { waitForWrite, snapshot, modifiedSince, notApplied } = require('../lib/verify');
 
 // NOTE: this command RESCHEDULES. It does not change which project or area a
 // task belongs to — that is `update --list` / `update --area`. The name is
@@ -18,17 +18,17 @@ function run(id, opts = {}) {
   if (opts.to === 'inbox') throw new Error('Moving to inbox is not supported via the Things URL scheme');
   const database = db.open();
   const ref = resolveTaskId(database, id, { yesFirst: opts['yes-first'] });
+  if (ref.type === TYPE.HEADING) {
+    throw new Error(`"${ref.title}" is a heading. Headings cannot be scheduled.`);
+  }
 
   const params = { id: ref.uuid, when: opts.to, 'auth-token': getToken() };
   const before = snapshot(ref.uuid);
   openUrl(ref.type === TYPE.PROJECT ? buildUpdateProjectUrl(params) : buildUpdateUrl(params));
 
   const { ok } = waitForWrite(ref.uuid, modifiedSince(before));
-  if (!ok) {
-    return `${colors.red('✗')} Things did not reschedule "${ref.title}" ` +
-      `(the URL was accepted but the database never changed)`;
-  }
-  return `Moved "${ref.title}" to ${opts.to}`;
+  if (!ok) return notApplied('reschedule', ref.title);
+  return `Rescheduled "${ref.title}" to ${opts.to}`;
 }
 
 module.exports = {

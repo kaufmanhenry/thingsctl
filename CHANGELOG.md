@@ -2,34 +2,53 @@
 
 ## 2.1.0
 
-Writes could silently do nothing and still report success. Fixed, plus the
-missing ability to move a to-do or project to a different parent.
+Writes could report success for changes that never happened. 2.0.4 fixed one
+command; this finishes the job, verifies every write against the database, adds
+re-parenting, and closes a credential leak found on the way.
 
-- **`complete` and `move` still no-opped on projects.** 2.0.4 routed `update`
-  to `things:///update-project` but left `complete` and `move` building
+- **`complete`, `move` and `tag` still no-opped on projects.** 2.0.4 routed
+  `update` to `things:///update-project` but left the other three building
   `things:///update`, which Things ignores for a project uuid. `open` still
-  exits 0, so `thingsctl complete <project>` printed `✓ Completed: <project>`
-  while the row stayed `status = 0`. Both now route by entity type, finishing
-  the fix 2.0.4 started.
-- **Success is now verified against the database, not assumed.** `open` exiting 0
-  only means macOS handed the URL to Things — it says nothing about whether Things
-  accepted it. Writes now poll the database (up to 3s) until the change is visible
-  and report a clear failure if it never lands. This is what turned the bug above
-  from an error into a lie.
-- **Added: move a to-do or project to a different parent.** Previously impossible
-  through the tool — `update` had no parameter for it and `move` only reschedules
-  despite the name. Now `update --list` / `--list-id` moves a to-do into a project
-  or area, and `update --area` / `--area-id` moves a project into an area. Passing
-  the wrong pair for the type (e.g. `--list` on a project) is refused with an
-  explanatory error rather than dropped silently by Things.
-- **`complete` refuses headings** instead of dispatching a URL that does nothing.
-- **`things_move`'s description now says it only reschedules**, and points at
-  `things_update` for re-parenting. The old wording ("moving it to...") read as a
-  re-parent and misled callers.
+  exits 0, so `thingsctl complete <project>` printed `✓ Completed` while the row
+  stayed `status = 0`. All write commands now route by entity type, and headings
+  are refused outright rather than dispatched into a command that cannot apply.
+- **Success is now verified against the database, not assumed.** `open` exiting
+  0 only means macOS handed the URL to Things. Writes poll the row until the
+  change is visible and report a clear failure otherwise. This is what turned
+  the routing bug from an error into a lie. Timeout is overridable with
+  `THINGSCTL_VERIFY_TIMEOUT_MS` (the URL scheme can cold-launch Things, which
+  takes longer than the 3s default); the MCP server defaults to 1200ms because
+  the wait is synchronous and blocks its event loop. Bulk `complete` now shares
+  one budget instead of spending the full timeout on every id.
+- **Security: the auth token leaked into error output.** macOS `open` echoes the
+  whole failing URL, `auth-token` included, and that text was spliced into
+  `ThingsUrlError` — which the CLI prints to stderr and the MCP server returns
+  as tool output, i.e. into a model transcript. The token is now redacted before
+  it can reach any sink.
+- **Security: `%` in an id matched every task.** `resolveTaskId` interpolated
+  the id straight into a `LIKE` pattern, so `complete '%' --yes-first` resolved
+  to an arbitrary row. Wildcards are escaped now. This mattered more once
+  `update` could relocate work rather than only complete it.
+- **`--completed false` completed the task instead of reopening it.** The CLI
+  parser yields the string `'false'`, which is truthy, so the flag sent the
+  opposite of what it says. Booleans are normalised once, up front.
+- **Added: move a to-do or project to a different parent.** Previously
+  impossible through the tool. `update --list` / `--list-id` moves a to-do into
+  a project or area, `update --area` / `--area-id` moves a project into an area,
+  and the move is verified against the row rather than against "something
+  changed". Passing the wrong pair for the type is refused with an explanation.
+- `tag` now tells the truth when a tag does not exist. Things silently drops an
+  `add-tags` naming a tag it has never seen; that used to print a checkmark.
+- `things_move`'s description said "moving it to...", which read as a re-parent
+  when it only ever rescheduled. Fixed, along with its success string, which
+  said "Moved" while its failure string said "did not reschedule".
+- `thingsctl update --help` was missing every flag added here; the CLI keeps a
+  hand-curated flag allowlist, so a new option has to be registered in four
+  places. Documented; consolidating that is left as follow-up.
 
-New: `src/lib/verify.js` (post-write confirmation), `url.buildUpdateProjectUrl`,
-`db.openFresh`, `WriteNotAppliedError`. 20 regression tests added, including one
-that pins each write command to the correct endpoint per task type.
+New: `src/lib/verify.js`, `url.buildUpdateProjectUrl` (from 2.0.4),
+`db.openFresh`, `exec.redactToken`. 129 tests, up from 79 at 2.0.3.
+
 ## 2.0.4
 
 Fix `update` silently no-opping on projects. Things applies the `update`
