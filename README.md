@@ -67,10 +67,23 @@ thingsctl add "Trip prep" --checklist "Passport,Tickets,Charger"
 thingsctl add "Tax filing" --when 2027-04-15 --deadline 2027-04-15 --tags Important
 
 thingsctl update 7Ae --title "New title" --append-notes "context"
-thingsctl complete 7Ae           # Single
+thingsctl complete 7Ae           # Single (to-do or project)
 thingsctl complete 7Ae 17j 9pU   # Bulk
-thingsctl move 7Ae --to "next week"
+thingsctl move 7Ae --to "next week"   # RESCHEDULES; does not change project/area
 thingsctl tag 7Ae --add Urgent
+```
+
+### Moving between projects and areas
+
+`move` reschedules. To change what a to-do or project *belongs to*, use `update`.
+Things exposes different parameters for the two, and mixing them up is refused
+rather than silently dropped:
+
+```bash
+thingsctl update 7Ae --list "Berlin Trip"      # to-do  → project or area, by title
+thingsctl update 7Ae --list-id Xm55Bsr1Wmk     # to-do  → project or area, by uuid
+thingsctl update p01 --area "Travel"           # project → area, by title
+thingsctl update p01 --area-id 7U6P28t2BfE     # project → area, by uuid
 ```
 
 ### Workflows

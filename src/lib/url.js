@@ -26,7 +26,9 @@ function buildUpdateUrl(params) {
   return `things:///update?${_encode(params)}`;
 }
 
-// Things applies `update` to to-dos only; projects need `update-project`.
+// Projects MUST use `update-project`. Things silently ignores an `update`
+// aimed at a project uuid — and `open` still exits 0 — so using the wrong
+// builder produces a write that never happens and never reports an error.
 function buildUpdateProjectUrl(params) {
   return `things:///update-project?${_encode(params)}`;
 }

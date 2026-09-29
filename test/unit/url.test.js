@@ -46,13 +46,6 @@ describe('buildUpdateUrl', () => {
   });
 });
 
-describe('buildUpdateProjectUrl', () => {
-  test('targets the update-project endpoint', () => {
-    const u = url.buildUpdateProjectUrl({ id: 'proj1', title: 'New Name' });
-    expect(u).toBe('things:///update-project?id=proj1&title=New%20Name');
-  });
-});
-
 describe('buildJsonUrl', () => {
   test('encodes nested data as JSON', () => {
     const u = url.buildJsonUrl({
@@ -65,5 +58,34 @@ describe('buildJsonUrl', () => {
     expect(JSON.parse(decoded)).toEqual([
       { type: 'project', attributes: { title: 'New', items: [] } },
     ]);
+  });
+});
+
+describe('buildUpdateProjectUrl', () => {
+  test('targets the update-project endpoint', () => {
+    const u = url.buildUpdateProjectUrl({ id: 'proj1', title: 'New Name' });
+    expect(u).toBe('things:///update-project?id=proj1&title=New%20Name');
+  });
+
+  test('targets the update-project endpoint, not update', () => {
+    const u = url.buildUpdateProjectUrl({ id: 'abc123', completed: 'true' });
+    expect(u).toBe('things:///update-project?id=abc123&completed=true');
+  });
+
+  test('carries area params used to re-parent a project', () => {
+    const u = url.buildUpdateProjectUrl({ id: 'p1', area: 'Travel Plans' });
+    expect(u).toBe('things:///update-project?id=p1&area=Travel%20Plans');
+  });
+});
+
+describe('re-parenting params on update', () => {
+  test('list moves a to-do into a project or area', () => {
+    const u = url.buildUpdateUrl({ id: 't1', list: 'Berlin Trip' });
+    expect(u).toBe('things:///update?id=t1&list=Berlin%20Trip');
+  });
+
+  test('list-id is carried verbatim', () => {
+    const u = url.buildUpdateUrl({ id: 't1', 'list-id': 'Xm55Bsr1WmkUDQsmxd7CBn' });
+    expect(u).toContain('list-id=Xm55Bsr1WmkUDQsmxd7CBn');
   });
 });

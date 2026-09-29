@@ -70,3 +70,25 @@ describe('resolveMany', () => {
     expect(out.errors[0].input).toBe('zzz');
   });
 });
+
+describe('LIKE wildcards in the id prefix', () => {
+  const Database = require('better-sqlite3');
+  const { OUT } = require('../fixtures/build');
+  let db;
+  beforeAll(() => { db = new Database(OUT, { readonly: true }); });
+  afterAll(() => { try { db.close(); } catch (_) {} });
+
+  test("'%' does not match every task", () => {
+    // Before escaping, this resolved to an arbitrary row with --yes-first,
+    // which over MCP meant a destructive verb could hit the wrong task.
+    expect(() => resolveTaskId(db, '%', { yesFirst: true })).toThrow(/not found/i);
+  });
+
+  test("'_' is not a single-character wildcard either", () => {
+    expect(() => resolveTaskId(db, '_', { yesFirst: true })).toThrow(/not found/i);
+  });
+
+  test('ordinary prefixes still resolve', () => {
+    expect(resolveTaskId(db, 't-today-1').uuid).toBe('t-today-1');
+  });
+});

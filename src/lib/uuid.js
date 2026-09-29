@@ -9,8 +9,12 @@ function resolveTaskId(db, partial, opts = {}) {
   if (!partial) throw new TaskNotFoundError(partial);
   const { type, yesFirst = false, includeTrashed = false } = opts;
 
-  let sql = 'SELECT uuid, title, type FROM TMTask WHERE uuid LIKE ?';
-  const params = [`${partial}%`];
+  // Escape LIKE wildcards: without this, an id of '%' matches EVERY row, and
+  // with --yes-first that silently resolves to an arbitrary task. Reachable over
+  // MCP, and now that update can re-parent, a mis-resolved id relocates work.
+  const escaped = String(partial).replace(/[\\%_]/g, (c) => `\\${c}`);
+  let sql = "SELECT uuid, title, type FROM TMTask WHERE uuid LIKE ? ESCAPE '\\'";
+  const params = [`${escaped}%`];
   if (!includeTrashed) sql += ' AND trashed = 0';
   if (type !== undefined) {
     sql += ' AND type = ?';
