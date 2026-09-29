@@ -1,0 +1,61 @@
+name: Publish
+
+# Releases are cut by pushing a version tag:
+#   npm version <level> --no-git-tag-version  (or edit package.json)
+#   git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z
+#
+# Authentication is trusted publishing (OIDC): npm trusts this specific
+# workflow file in this specific repo, so there is no npm token stored anywhere
+# and nothing to expire. The trust is configured on npmjs.com under
+# Package settings -> Trusted Publisher, and it pins the filename "publish.yml"
+# exactly — renaming this file breaks publishing with ENEEDAUTH.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  id-token: write   # required for OIDC; without it npm falls back to a token and fails
+  contents: read
+
+jobs:
+  publish:
+    # macos-latest matches ci.yml. The package is macOS-only and the suite has
+    # only ever been exercised there; a release is the wrong place to find out
+    # whether it passes on Linux.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+          # No dependency cache in a release build: the artifact that goes to
+          # the registry should be built from a clean install every time.
+
+      # OIDC support landed in npm 11.5.x. Node 24 ships a new enough npm, but
+      # pin it explicitly so a runner image change cannot silently regress this.
+      - name: Ensure npm supports OIDC
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - name: Refuse to publish if the tag and package.json disagree
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p 'require("./package.json").version')"
+          echo "tag=$TAG package.json=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run fixture
+      - run: npm test
+
+      # No NODE_AUTH_TOKEN. Authentication comes from the OIDC exchange, and
+      # provenance is attached automatically for a public repo + public package.
+      - run: npm publish
