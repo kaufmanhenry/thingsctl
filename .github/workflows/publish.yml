@@ -30,15 +30,22 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          # NOT 24, whatever npm's docs example says: better-sqlite3 11.x ships
+          # no prebuilt binary for Node 24 (ABI 137), so `npm ci` leaves the
+          # native module unbuilt and the fixture step dies before publish ever
+          # runs. 22 is the newest version ci.yml actually exercises.
+          node-version: 22
           registry-url: 'https://registry.npmjs.org'
           # No dependency cache in a release build: the artifact that goes to
           # the registry should be built from a clean install every time.
 
-      # OIDC support landed in npm 11.5.x. Node 24 ships a new enough npm, but
-      # pin it explicitly so a runner image change cannot silently regress this.
+      # OIDC support landed in npm 11.5.x, newer than the npm bundled with
+      # Node 22, so upgrade explicitly. npm@latest needs Node ^22.22.2, which
+      # setup-node's "22" satisfies. Versions are echoed so a future runner
+      # image change is diagnosable from the log alone.
       - name: Ensure npm supports OIDC
         run: |
+          node --version
           npm install -g npm@latest
           npm --version
 
